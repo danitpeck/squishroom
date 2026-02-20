@@ -5,6 +5,10 @@ class MainScene extends Phaser.Scene {
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys
   private player?: Phaser.GameObjects.Rectangle
   private wasOnGround = false
+  private exitZone?: Phaser.GameObjects.Rectangle
+  private completeText?: Phaser.GameObjects.Text
+  private overlay?: Phaser.GameObjects.Rectangle
+  private isComplete = false
 
   constructor() {
     super('main')
@@ -16,6 +20,9 @@ class MainScene extends Phaser.Scene {
     const floor = this.add.rectangle(400, 560, 760, 40, 0x4c7a3d)
     this.physics.add.existing(floor, true)
 
+    this.exitZone = this.add.rectangle(700, 530, 70, 30, 0xd4c24f)
+    this.physics.add.existing(this.exitZone, true)
+
     this.player = this.add.rectangle(400, 300, 40, 60, 0x8a5a44)
     this.physics.add.existing(this.player)
 
@@ -24,10 +31,14 @@ class MainScene extends Phaser.Scene {
     playerBody.setSize(40, 60)
 
     this.physics.add.collider(this.player, floor)
+    this.physics.add.overlap(this.player, this.exitZone, this.handleExit, undefined, this)
+
+    this.overlay = this.add.rectangle(400, 300, 800, 600, 0x000000, 0)
+    this.overlay.setDepth(10)
   }
 
   update() {
-    if (!this.player || !this.cursors) {
+    if (!this.player || !this.cursors || this.isComplete) {
       return
     }
 
@@ -53,6 +64,46 @@ class MainScene extends Phaser.Scene {
     }
 
     this.wasOnGround = isOnGround
+  }
+
+  private handleExit() {
+    if (this.isComplete || !this.player || !this.exitZone) {
+      return
+    }
+
+    this.isComplete = true
+
+    const body = this.player.body as Phaser.Physics.Arcade.Body
+    body.setVelocity(0, 0)
+    body.moves = false
+
+    this.completeText = this.add
+      .text(400, 300, 'Level Complete', {
+        fontSize: '40px',
+        color: '#f4f2e6',
+        fontFamily: 'Trebuchet MS, sans-serif'
+      })
+      .setOrigin(0.5)
+      .setDepth(11)
+
+    this.tweens.add({
+      targets: this.exitZone,
+      scaleX: 1.2,
+      scaleY: 1.2,
+      duration: 160,
+      yoyo: true,
+      repeat: 2,
+      ease: 'Quad.Out'
+    })
+
+    if (this.overlay) {
+      this.tweens.add({
+        targets: this.overlay,
+        alpha: 0.25,
+        duration: 200,
+        ease: 'Quad.Out'
+      })
+    }
   }
 
   private playJumpStretch() {
