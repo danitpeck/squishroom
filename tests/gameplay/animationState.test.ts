@@ -243,16 +243,12 @@ describe('animationState', () => {
       expect(shouldChangeAnimation('idle', 'idle')).toBe(false);
     });
 
-    it('returns false when both are undefined', () => {
-      expect(shouldChangeAnimation(undefined, undefined)).toBe(false);
-    });
-
     it('returns true when changing from undefined to animation', () => {
       expect(shouldChangeAnimation(undefined, 'idle')).toBe(true);
     });
 
-    it('returns true when changing from animation to undefined', () => {
-      expect(shouldChangeAnimation('idle', undefined as any)).toBe(true);
+    it('returns true when changing from one animation to another', () => {
+      expect(shouldChangeAnimation('land', 'run')).toBe(true);
     });
 
     it('handles all valid animation transitions', () => {
@@ -263,6 +259,11 @@ describe('animationState', () => {
           expect(result).toBe(from !== to);
         });
       });
+    });
+
+    it('current animation can be undefined (animation starting)', () => {
+      expect(shouldChangeAnimation(undefined, 'jump')).toBe(true);
+      expect(shouldChangeAnimation(undefined, 'idle')).toBe(true);
     });
   });
 });
