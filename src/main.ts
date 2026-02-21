@@ -8,17 +8,17 @@ const LEVELS = [
   [
     '####################',
     '#..S...............#',
-    '#..........##......#',
-    '#..................#',
-    '#......####........#',
     '#..................#',
     '#..................#',
     '#..................#',
-    '#..........##...E..#',
     '#..................#',
-    '#.....##...........#',
     '#..................#',
-    '#..........##......#',
+    '#..................#',
+    '#........####...E..#',
+    '#..................#',
+    '#......##..........#',
+    '#..................#',
+    '#....##............#',
     '#..................#',
     '####################'
   ],
@@ -26,16 +26,16 @@ const LEVELS = [
     '####################',
     '#..S...............#',
     '#..................#',
-    '#..........####....#',
+    '#..................#',
     '#..................#',
     '#~~~~~~~~~~~~~~~~~~#',
     '#..................#',
     '#..................#',
     '#..............E...#',
     '#..................#',
-    '#.....######.......#',
+    '#........####......#',
     '#..................#',
-    '#..........##......#',
+    '#.............##...#',
     '#..................#',
     '####################'
   ],
@@ -43,16 +43,50 @@ const LEVELS = [
     '####################',
     '#..S...............#',
     '#..................#',
-    '#....####..........#',
     '#..................#',
-    '#..........^^^.....#',
-    '#..........###.....#',
+    '#..................#',
+    '#..................#',
+    '#..................#',
+    '#..................#',
+    '#.........#....E...#',
+    '#..................#',
+    '#.....##.....##....#',
+    '#....#..^^^^^......#',
+    '#...#...#####......#',
+    '#..................#',
+    '####################'
+  ],
+  [
+    '####################',
+    '#..S...............#',
+    '#..................#',
+    '#..................#',
+    '#..................#',
+    '#~~~~~~#############',
+    '#..................#',
     '#..................#',
     '#..............E...#',
     '#..................#',
-    '#.....##...........#',
+    '#.....##########...#',
     '#..................#',
-    '#..........##......#',
+    '#..................#',
+    '#^^^^^^^^^^^^^^^^^^#',
+    '####################'
+  ],
+  [
+    '####################',
+    '#..S.#.............#',
+    '#....#.............#',
+    '#....#.............#',
+    '#....#.............#',
+    '#..................#',
+    '#..................#',
+    '#..................#',
+    '#.........##...E...#',
+    '#.......##.........#',
+    '#.....##...........#',
+    '#^^^^^.............#',
+    '######.............#',
     '#..................#',
     '####################'
   ],
@@ -60,51 +94,17 @@ const LEVELS = [
     '####################',
     '#..S...............#',
     '#..................#',
-    '#....####..........#',
     '#..................#',
-    '#~~~~~~............#',
-    '#......###.........#',
     '#..................#',
-    '#..............E...#',
+    '#~~~~~~~~~~~~~~~~~~#',
+    '#.^^^^^^^^^^^^^^^^^#',
+    '#.##################',
+    '#..##############E##',
+    '##~#############...#',
     '#..................#',
-    '#.....######.......#',
+    '#~#~~~~~~~~~~~~~~~~#',
     '#..................#',
-    '#..........##......#',
-    '#..................#',
-    '####################'
-  ],
-  [
-    '####################',
-    '#..S...............#',
-    '#..................#',
-    '#.....^^^..........#',
-    '#.....###..........#',
-    '#..................#',
-    '#..........####....#',
-    '#..................#',
-    '#..............E...#',
-    '#..................#',
-    '#.....##...........#',
-    '#..................#',
-    '#..........##......#',
-    '#..................#',
-    '####################'
-  ],
-  [
-    '####################',
-    '#..S...............#',
-    '#..................#',
-    '#....####..........#',
-    '#..................#',
-    '#~~~~~~~~~~~~~~~~..#',
-    '#..........^^^.....#',
-    '#..........###.....#',
-    '#................E.#',
-    '#..................#',
-    '#.....##...........#',
-    '#..................#',
-    '#..........##......#',
-    '#..................#',
+    '#^^^^^^######^^^^^^#',
     '####################'
   ]
 ]
@@ -184,8 +184,9 @@ class MainScene extends Phaser.Scene {
     jump: Phaser.Input.Keyboard.Key
     down: Phaser.Input.Keyboard.Key
   }
-  private player?: Phaser.GameObjects.Rectangle
+  private player?: Phaser.Physics.Arcade.Sprite
   private wasOnGround = false
+  private justLanded = false
   private walls?: Phaser.Physics.Arcade.StaticGroup
   private thinPlatforms?: Phaser.Physics.Arcade.StaticGroup
   private hazards?: Phaser.Physics.Arcade.StaticGroup
@@ -205,6 +206,13 @@ class MainScene extends Phaser.Scene {
     super('main')
   }
 
+  preload() {
+    this.load.spritesheet('player', '/assets/player.png', {
+      frameWidth: 32,
+      frameHeight: 32
+    })
+  }
+
   create() {
     const keyboard = this.input.keyboard
     this.cursors = keyboard?.createCursorKeys()
@@ -214,6 +222,40 @@ class MainScene extends Phaser.Scene {
       jump: Phaser.Input.Keyboard.KeyCodes.SPACE,
       down: Phaser.Input.Keyboard.KeyCodes.S
     }) as typeof this.keys
+
+    // Create animations
+    this.anims.create({
+      key: 'idle',
+      frames: [{ key: 'player', frame: 0 }, { key: 'player', frame: 1 }],
+      frameRate: 2,
+      repeat: -1
+    })
+
+    this.anims.create({
+      key: 'run',
+      frames: [{ key: 'player', frame: 0 }, { key: 'player', frame: 1 }],
+      frameRate: 2,
+      repeat: -1
+    })
+
+    this.anims.create({
+      key: 'jump',
+      frames: [{ key: 'player', frame: 2 }],
+      frameRate: 1
+    })
+
+    this.anims.create({
+      key: 'fall',
+      frames: [{ key: 'player', frame: 2 }],
+      frameRate: 1
+    })
+
+    this.anims.create({
+      key: 'land',
+      frames: [{ key: 'player', frame: 3 }],
+      frameRate: 3,
+      repeat: 0
+    })
 
     this.walls = this.physics.add.staticGroup()
     this.thinPlatforms = this.physics.add.staticGroup()
@@ -233,12 +275,16 @@ class MainScene extends Phaser.Scene {
 
     const leftDown = this.cursors.left?.isDown || this.keys.left.isDown
     const rightDown = this.cursors.right?.isDown || this.keys.right.isDown
+    const isMoving = leftDown || rightDown
 
+    // Movement
     if (!this.isDripping) {
       if (leftDown) {
         body.setVelocityX(-speed)
+        this.player!.setFlipX(false)
       } else if (rightDown) {
         body.setVelocityX(speed)
+        this.player!.setFlipX(true)
       } else {
         body.setVelocityX(0)
       }
@@ -247,6 +293,7 @@ class MainScene extends Phaser.Scene {
       body.setVelocityY(720)
     }
 
+    // Jump
     const jumpPressed =
       (this.cursors.up && Phaser.Input.Keyboard.JustDown(this.cursors.up)) ||
       Phaser.Input.Keyboard.JustDown(this.keys.jump)
@@ -254,9 +301,11 @@ class MainScene extends Phaser.Scene {
     if (jumpPressed && isOnGround) {
       this.stopIdleWobble()
       body.setVelocityY(-420)
+      this.justLanded = false
       this.playJumpStretch()
     }
 
+    // Drip
     const dripPressed =
       (this.cursors.down && Phaser.Input.Keyboard.JustDown(this.cursors.down)) ||
       Phaser.Input.Keyboard.JustDown(this.keys.down)
@@ -275,7 +324,9 @@ class MainScene extends Phaser.Scene {
       body.setVelocityY(body.velocity.y * 0.5)
     }
 
+    // Landing detection
     if (!this.wasOnGround && isOnGround) {
+      this.justLanded = true
       this.playLandSquash()
     }
 
@@ -283,21 +334,57 @@ class MainScene extends Phaser.Scene {
       this.isDripping = false
     }
 
-    const isIdle =
-      isOnGround &&
-      !this.isDripping &&
-      !leftDown &&
-      !rightDown &&
-      !jumpPressed &&
-      Math.abs(body.velocity.x) < 1
-
-    if (isIdle) {
-      this.startIdleWobble()
-    } else {
-      this.stopIdleWobble()
-    }
+    // Animation state machine
+    this.updateAnimationState(isOnGround, isMoving)
 
     this.wasOnGround = isOnGround
+  }
+
+  private updateAnimationState(isOnGround: boolean, isMoving: boolean) {
+    if (!this.player) return
+
+    const currentAnim = this.player.anims.currentAnim
+    const currentAnimKey = currentAnim?.key
+    const isAnimPlaying = this.player.anims.isPlaying
+
+    // If land is playing, don't interrupt it
+    if (currentAnimKey === 'land' && isAnimPlaying) {
+      return
+    }
+
+    // Just landed - play land animation once
+    if (this.justLanded) {
+      this.player.play('land', true)
+      this.justLanded = false
+      return
+    }
+
+    // In air
+    if (!isOnGround) {
+      const velocityY = (this.player.body as Phaser.Physics.Arcade.Body).velocity.y
+      if (velocityY > 0) {
+        if (currentAnimKey !== 'fall') {
+          this.player.play('fall', true)
+        }
+      } else if (velocityY < 0) {
+        if (currentAnimKey !== 'jump') {
+          this.player.play('jump', true)
+        }
+      }
+      return
+    }
+
+    // On ground
+    if (isMoving) {
+      if (currentAnimKey !== 'run') {
+        this.player.play('run', true)
+      }
+    } else {
+      if (currentAnimKey !== 'idle') {
+        this.startIdleWobble()
+        this.player.play('idle', true)
+      }
+    }
   }
 
   private handleExit() {
@@ -324,8 +411,15 @@ class MainScene extends Phaser.Scene {
     body.moves = true
     this.isDripping = false
     this.wasOnGround = false
-    this.player.setScale(1, 1)
+
+    // Recommended: bottom-center origin for platformers
+    this.player.setOrigin(0.5, 1);
+
+    // Scale it up visually
+    this.player.setScale(2)
+
     this.player.setPosition(this.spawnPoint.x, this.spawnPoint.y)
+    this.player.play('idle')
   }
 
   private playJumpStretch() {
@@ -334,16 +428,7 @@ class MainScene extends Phaser.Scene {
     }
 
     this.stopIdleWobble()
-
-    this.tweens.killTweensOf(this.player)
-    this.tweens.add({
-      targets: this.player,
-      scaleX: 0.85,
-      scaleY: 1.15,
-      duration: 90,
-      ease: 'Quad.Out',
-      yoyo: true
-    })
+    // Scale tween disabled to keep sprite at consistent size
   }
 
   private playLandSquash() {
@@ -352,16 +437,7 @@ class MainScene extends Phaser.Scene {
     }
 
     this.stopIdleWobble()
-
-    this.tweens.killTweensOf(this.player)
-    this.tweens.add({
-      targets: this.player,
-      scaleX: 1.15,
-      scaleY: 0.85,
-      duration: 90,
-      ease: 'Quad.Out',
-      yoyo: true
-    })
+    // Scale tween disabled to keep sprite at consistent size
   }
 
   private loadLevel(index: number) {
@@ -379,9 +455,9 @@ class MainScene extends Phaser.Scene {
     this.levelText?.destroy()
     this.stopIdleWobble()
 
-    this.walls!.clear(true, true)
-    this.thinPlatforms!.clear(true, true)
-    this.hazards!.clear(true, true)
+    this.walls?.clear(true, true)
+    this.thinPlatforms?.clear(true, true)
+    this.hazards?.clear(true, true)
 
     this.physics.world.setBounds(0, 0, levelWidth, levelHeight)
     this.cameras.main.setBounds(0, 0, levelWidth, levelHeight)
@@ -418,11 +494,20 @@ class MainScene extends Phaser.Scene {
     }
 
     if (!this.player) {
-      this.player = this.add.rectangle(levelData.spawn.x, levelData.spawn.y, 40, 60, 0x8a5a44)
-      this.physics.add.existing(this.player)
+      const sprite = this.add.sprite(levelData.spawn.x, levelData.spawn.y, 'player', 0)
+      sprite.setScale(2)
+      this.physics.add.existing(sprite)
+      this.player = sprite as Phaser.Physics.Arcade.Sprite
       const playerBody = this.player.body as Phaser.Physics.Arcade.Body
-      playerBody.setSize(40, 60)
+
+
+      // IMPORTANT: define body size in *source pixels* (before scale),
+      // Phaser will scale the body automatically when you scale the sprite.
+      playerBody.setSize(18, 18);      // width, height (tune)
+      playerBody.setOffset(7, 4);     // x, y inside the 32x32 frame (tune)
+
       playerBody.setCollideWorldBounds(true)
+      this.player.play('idle')
     } else {
       let playerBody = this.player.body as Phaser.Physics.Arcade.Body | null
       if (!playerBody) {
@@ -431,8 +516,9 @@ class MainScene extends Phaser.Scene {
       }
       playerBody.moves = true
       playerBody.setVelocity(0, 0)
-      this.player.setScale(1, 1)
+      this.player.setScale(2)
       this.player.setPosition(levelData.spawn.x, levelData.spawn.y)
+      this.player.play('idle')
     }
 
     this.wallCollider?.destroy()
@@ -467,19 +553,16 @@ class MainScene extends Phaser.Scene {
   }
 
   private startIdleWobble() {
-    if (!this.player || this.idleTween) {
+    // Idle wobble disabled to prevent scale interference with sprite
+    if (!this.player) {
       return
     }
 
-    this.idleTween = this.tweens.add({
-      targets: this.player,
-      scaleX: 1.04,
-      scaleY: 0.96,
-      duration: 700,
-      ease: 'Sine.InOut',
-      yoyo: true,
-      repeat: -1
-    })
+    // Make sure we're playing the idle animation
+    const anim = this.player.anims.currentAnim
+    if (!anim || anim.key !== 'idle') {
+      this.player.play('idle')
+    }
   }
 
   private stopIdleWobble() {
@@ -490,7 +573,8 @@ class MainScene extends Phaser.Scene {
     this.idleTween.stop()
     this.idleTween.remove()
     this.idleTween = undefined
-    this.player.setScale(1, 1)
+    // Keep scale at 2
+    this.player.setScale(2)
   }
 }
 
@@ -507,7 +591,7 @@ const config: Phaser.Types.Core.GameConfig = {
     default: 'arcade',
     arcade: {
       gravity: { x: 0, y: 900 },
-      debug: false
+      debug: true
     }
   },
   scene: [TitleScene, MainScene, WinScene]
