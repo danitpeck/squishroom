@@ -1,6 +1,12 @@
 import './style.css'
 import Phaser from 'phaser'
 import { parseLevel } from './level'
+import { shouldThinPlatformCollide } from './gameplay/thinPlatform'
+import { shouldJump, getJumpVelocity, shouldCutJump, getCutJumpVelocity } from './gameplay/jumpInput'
+import { shouldEmitTrail, getNextTrailTime, getTrailOffsetX, getTrailJitterX, getTrailJitterY, getTrailCount, getTrailEmitY } from './gameplay/trailEmission'
+import { getNextAnimationKey, shouldChangeAnimation } from './gameplay/animationState'
+import { shouldStartDrip, getDripVelocity, getDripVelocityX, shouldEndDrip } from './gameplay/dripInput'
+import { shouldTriggerHazard, getHazardStateReset, getHazardVelocity, getHazardSplatScale } from './gameplay/hazardInteraction'
 
 const TILE_SIZE = 40
 
@@ -97,12 +103,12 @@ const LEVELS = [
     '#..................#',
     '#..................#',
     '#~~~~~~~~~~~~~~~~~~#',
-    '#.^^^^^^^^^^^^^^^^^#',
-    '#.##################',
+    '#..^^^^^^^^^^^^^^^^#',
+    '#..#################',
     '#..#############.E.#',
-    '##~#############...#',
+    '#~~#############...#',
     '#..................#',
-    '#~#~~~~~~~~~~~~~~~~#',
+    '###~~~~~~~~~~~~~~~~#',
     '#..................#',
     '#^^^^^^######^^^^^^#',
     '####################'
@@ -187,6 +193,7 @@ class MainScene extends Phaser.Scene {
   private player?: Phaser.Physics.Arcade.Sprite
   private wasOnGround = false
   private justLanded = false
+  private isDrippingParticles = false
   private walls?: Phaser.Physics.Arcade.StaticGroup
   private thinPlatforms?: Phaser.Physics.Arcade.StaticGroup
   private hazards?: Phaser.Physics.Arcade.StaticGroup
@@ -201,6 +208,13 @@ class MainScene extends Phaser.Scene {
   private levelIndex = 0
   private idleTween?: Phaser.Tweens.Tween
   private spawnPoint = { x: TILE_SIZE / 2, y: TILE_SIZE / 2 }
+  private jumpEmitter?: Phaser.GameObjects.Particles.ParticleEmitter
+  private landEmitter?: Phaser.GameObjects.Particles.ParticleEmitter
+  private dripEmitter?: Phaser.GameObjects.Particles.ParticleEmitter
+  private spikeEmitter?: Phaser.GameObjects.Particles.ParticleEmitter
+  private trailEmitter?: Phaser.GameObjects.Particles.ParticleEmitter
+  private nextTrailAt = 0
+  private debugToggleKey?: Phaser.Input.Keyboard.Key
 
   constructor() {
     super('main')
@@ -222,49 +236,139 @@ class MainScene extends Phaser.Scene {
       jump: Phaser.Input.Keyboard.KeyCodes.SPACE,
       down: Phaser.Input.Keyboard.KeyCodes.S
     }) as typeof this.keys
+    this.debugToggleKey = keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.F1)
+    this.setPhysicsDebugEnabled(false)
 
-    // Create animations
-    this.anims.create({
-      key: 'idle',
-      frames: [{ key: 'player', frame: 0 }, { key: 'player', frame: 1 }],
-      frameRate: 2,
-      repeat: -1
-    })
+    // Reset player for fresh start
+    this.player?.destroy()
+    this.player = undefined
+    this.wasOnGround = false
+    this.justLanded = false
+    this.isDripping = false
+    this.nextTrailAt = 0
 
-    this.anims.create({
-      key: 'run',
-      frames: [{ key: 'player', frame: 0 }, { key: 'player', frame: 1 }],
-      frameRate: 2,
-      repeat: -1
-    })
+    // Create a simple particle texture (only once)
+    if (!this.textures.exists('particle')) {
+      const graphics = this.make.graphics()
+      graphics.fillStyle(0xffffff, 1)
+      graphics.fillRect(0, 0, 4, 4)
+      graphics.generateTexture('particle', 4, 4)
+      graphics.destroy()
+    }
 
-    this.anims.create({
-      key: 'jump',
-      frames: [{ key: 'player', frame: 2 }],
-      frameRate: 1
-    })
+    // Create animations (only if they don't exist)
+    if (!this.anims.exists('idle')) {
+      this.anims.create({
+        key: 'idle',
+        frames: [{ key: 'player', frame: 0 }, { key: 'player', frame: 1 }],
+        frameRate: 2,
+        repeat: -1
+      })
+    }
 
-    this.anims.create({
-      key: 'fall',
-      frames: [{ key: 'player', frame: 2 }],
-      frameRate: 1
-    })
+    if (!this.anims.exists('run')) {
+      this.anims.create({
+        key: 'run',
+        frames: [{ key: 'player', frame: 0 }, { key: 'player', frame: 1 }],
+        frameRate: 2,
+        repeat: -1
+      })
+    }
 
-    this.anims.create({
-      key: 'land',
-      frames: [{ key: 'player', frame: 3 }],
-      frameRate: 3,
-      repeat: 0
-    })
+    if (!this.anims.exists('jump')) {
+      this.anims.create({
+        key: 'jump',
+        frames: [{ key: 'player', frame: 2 }],
+        frameRate: 1
+      })
+    }
+
+    if (!this.anims.exists('fall')) {
+      this.anims.create({
+        key: 'fall',
+        frames: [{ key: 'player', frame: 2 }],
+        frameRate: 1
+      })
+    }
+
+    if (!this.anims.exists('land')) {
+      this.anims.create({
+        key: 'land',
+        frames: [{ key: 'player', frame: 3 }],
+        frameRate: 3,
+        repeat: 0
+      })
+    }
 
     this.walls = this.physics.add.staticGroup()
     this.thinPlatforms = this.physics.add.staticGroup()
     this.hazards = this.physics.add.staticGroup()
 
+    // Create particle emitters (Phaser 3.60+ API)
+    this.jumpEmitter = this.add.particles(0, 0, 'particle', {
+      speedX: { min: -70, max: 70 },
+      speedY: { min: -22, max: 6 },
+      scale: { start: 0.9, end: 0.2 },
+      alpha: { start: 0.78, end: 0 },
+      lifespan: 390,
+      gravityY: 125,
+      emitting: false,
+      tint: 0xB58CFF
+    })
+
+    this.landEmitter = this.add.particles(0, 0, 'particle', {
+      speedX: { min: -120, max: 120 },
+      speedY: { min: -26, max: 12 },
+      scale: { start: 1.25, end: 0.3 },
+      alpha: { start: 0.9, end: 0 },
+      lifespan: 520,
+      gravityY: 180,
+      emitting: false,
+      maxParticles: 24,
+      tint: 0xB58CFF
+    })
+
+    this.dripEmitter = this.add.particles(0, 0, 'particle', {
+      speed: { min: -10, max: 10 },
+      angle: 270,
+      scale: { start: 0.6, end: 0 },
+      lifespan: 500,
+      emitting: false,
+      frequency: 50,
+      maxParticles: 50,
+      tint: 0xB58CFF
+    })
+
+    this.spikeEmitter = this.add.particles(0, 0, 'particle', {
+      speed: { min: -150, max: 150 },
+      angle: { min: 0, max: 360 },
+      scale: { start: 1, end: 0 },
+      lifespan: 500,
+      emitting: false,
+      maxParticles: 15,
+      tint: 0xB58CFF
+    })
+
+    this.trailEmitter = this.add.particles(0, 0, 'particle', {
+      speedX: { min: -16, max: 16 },
+      speedY: { min: -3, max: 7 },
+      scale: { start: 1.05, end: 0.28 },
+      alpha: { start: 0.82, end: 0 },
+      lifespan: 760,
+      gravityY: 45,
+      emitting: false,
+      maxParticles: 180,
+      tint: [0xB58CFF, 0xA876FF, 0xC79EFF]
+    })
+
     this.loadLevel(0)
   }
 
   update() {
+    if (this.debugToggleKey && Phaser.Input.Keyboard.JustDown(this.debugToggleKey)) {
+      this.setPhysicsDebugEnabled(!this.physics.world.drawDebug)
+    }
+
     if (!this.player || !this.cursors || !this.keys || this.isComplete) {
       return
     }
@@ -297,10 +401,11 @@ class MainScene extends Phaser.Scene {
     const jumpPressed =
       (this.cursors.up && Phaser.Input.Keyboard.JustDown(this.cursors.up)) ||
       Phaser.Input.Keyboard.JustDown(this.keys.jump)
+    const upPressed = this.cursors.up && Phaser.Input.Keyboard.JustDown(this.cursors.up)
 
-    if (jumpPressed && isOnGround) {
+    if (shouldJump(jumpPressed, upPressed, isOnGround)) {
       this.stopIdleWobble()
-      body.setVelocityY(-420)
+      body.setVelocityY(getJumpVelocity())
       this.justLanded = false
       this.playJumpStretch()
     }
@@ -310,18 +415,20 @@ class MainScene extends Phaser.Scene {
       (this.cursors.down && Phaser.Input.Keyboard.JustDown(this.cursors.down)) ||
       Phaser.Input.Keyboard.JustDown(this.keys.down)
 
-    if (dripPressed && !isOnGround) {
+    if (shouldStartDrip(dripPressed, isOnGround)) {
       this.isDripping = true
-      body.setVelocityX(0)
-      body.setVelocityY(720)
+      this.isDrippingParticles = true
+      body.setVelocityX(getDripVelocityX())
+      body.setVelocityY(getDripVelocity())
     }
 
     const jumpReleased =
       (this.cursors.up && Phaser.Input.Keyboard.JustUp(this.cursors.up)) ||
       Phaser.Input.Keyboard.JustUp(this.keys.jump)
+    const upReleased = this.cursors.up && Phaser.Input.Keyboard.JustUp(this.cursors.up)
 
-    if (jumpReleased && body.velocity.y < 0) {
-      body.setVelocityY(body.velocity.y * 0.5)
+    if (shouldCutJump(jumpReleased, upReleased, body.velocity.y)) {
+      body.setVelocityY(getCutJumpVelocity(body.velocity.y))
     }
 
     // Landing detection
@@ -330,12 +437,32 @@ class MainScene extends Phaser.Scene {
       this.playLandSquash()
     }
 
-    if (isOnGround) {
+    if (shouldEndDrip(isOnGround)) {
       this.isDripping = false
+      this.isDrippingParticles = false
     }
 
     // Animation state machine
     this.updateAnimationState(isOnGround, isMoving)
+
+    // Emit drip particles while dripping
+    if (this.isDrippingParticles && this.player) {
+      this.dripEmitter?.emitParticleAt(this.player.x, this.player.y + 16, 1)
+    }
+
+    // Emit slime trail while moving on the ground
+    if (isMoving && isOnGround && !this.isDripping) {
+      const now = this.time.now
+      if (shouldEmitTrail(now, this.nextTrailAt)) {
+        const trailOffsetX = getTrailOffsetX(body.velocity.x)
+        const jitterX = getTrailJitterX()
+        const jitterY = getTrailJitterY()
+        const count = getTrailCount()
+        const emitY = getTrailEmitY(this.player.y)
+        this.trailEmitter?.emitParticleAt(this.player.x + trailOffsetX + jitterX, emitY + jitterY, count)
+        this.nextTrailAt = getNextTrailTime(now)
+      }
+    }
 
     this.wasOnGround = isOnGround
   }
@@ -346,44 +473,31 @@ class MainScene extends Phaser.Scene {
     const currentAnim = this.player.anims.currentAnim
     const currentAnimKey = currentAnim?.key
     const isAnimPlaying = this.player.anims.isPlaying
+    const velocityY = (this.player.body as Phaser.Physics.Arcade.Body).velocity.y
 
-    // If land is playing, don't interrupt it
-    if (currentAnimKey === 'land' && isAnimPlaying) {
-      return
-    }
+    const nextKey = getNextAnimationKey(
+      currentAnimKey,
+      isAnimPlaying,
+      isOnGround,
+      isMoving,
+      velocityY,
+      this.justLanded
+    )
 
-    // Just landed - play land animation once
-    if (this.justLanded) {
-      this.player.play('land', true)
-      this.justLanded = false
-      return
-    }
-
-    // In air
-    if (!isOnGround) {
-      const velocityY = (this.player.body as Phaser.Physics.Arcade.Body).velocity.y
-      if (velocityY > 0) {
-        if (currentAnimKey !== 'fall') {
-          this.player.play('fall', true)
-        }
-      } else if (velocityY < 0) {
-        if (currentAnimKey !== 'jump') {
-          this.player.play('jump', true)
-        }
-      }
-      return
-    }
-
-    // On ground
-    if (isMoving) {
-      if (currentAnimKey !== 'run') {
-        this.player.play('run', true)
-      }
-    } else {
-      if (currentAnimKey !== 'idle') {
+    if (shouldChangeAnimation(currentAnimKey, nextKey)) {
+      this.player.play(nextKey, true)
+      
+      // Idle wobble state machine
+      if (nextKey === 'idle') {
         this.startIdleWobble()
-        this.player.play('idle', true)
+      } else {
+        this.stopIdleWobble()
       }
+    }
+
+    // Clear justLanded flag after land animation is queued
+    if (this.justLanded && nextKey === 'land') {
+      this.justLanded = false
     }
   }
 
@@ -402,24 +516,29 @@ class MainScene extends Phaser.Scene {
   }
 
   private handleHazard() {
-    if (!this.player || this.isComplete) {
+    if (!shouldTriggerHazard(this.isComplete, !!this.player)) {
       return
     }
 
-    const body = this.player.body as Phaser.Physics.Arcade.Body
-    body.setVelocity(0, 0)
-    body.moves = true
-    this.isDripping = false
-    this.wasOnGround = false
+    // Emit spike particles
+    if (this.spikeEmitter) {
+      this.spikeEmitter.emitParticleAt(this.player!.x, this.player!.y, 12)
+    }
 
-    // Recommended: bottom-center origin for platformers
-    this.player.setOrigin(0.5, 1);
+    // Apply hazard state reset
+    const reset = getHazardStateReset()
+    const body = this.player!.body as Phaser.Physics.Arcade.Body
+    const vel = getHazardVelocity()
 
-    // Scale it up visually
-    this.player.setScale(2)
+    body.setVelocity(vel.x, vel.y)
+    this.isDripping = reset.isDripping
+    this.wasOnGround = reset.wasOnGround
 
-    this.player.setPosition(this.spawnPoint.x, this.spawnPoint.y)
-    this.player.play('idle')
+    // Scale it up visually for splat effect
+    this.player!.setScale(getHazardSplatScale())
+
+    this.player!.setPosition(this.spawnPoint.x, this.spawnPoint.y)
+    this.player!.play('idle')
   }
 
   private playJumpStretch() {
@@ -428,7 +547,10 @@ class MainScene extends Phaser.Scene {
     }
 
     this.stopIdleWobble()
-    // Scale tween disabled to keep sprite at consistent size
+    // Emit jump particles
+    if (this.jumpEmitter) {
+      this.jumpEmitter.emitParticleAt(this.player.x, this.player.y + 17, 6)
+    }
   }
 
   private playLandSquash() {
@@ -437,7 +559,10 @@ class MainScene extends Phaser.Scene {
     }
 
     this.stopIdleWobble()
-    // Scale tween disabled to keep sprite at consistent size
+    // Emit land particles
+    if (this.landEmitter) {
+      this.landEmitter.emitParticleAt(this.player.x, this.player.y + 17, 12)
+    }
   }
 
   private loadLevel(index: number) {
@@ -454,6 +579,18 @@ class MainScene extends Phaser.Scene {
     this.overlay?.destroy()
     this.levelText?.destroy()
     this.stopIdleWobble()
+
+    // Stop and clear all particle emitters to prevent memory leak
+    this.jumpEmitter?.stop()
+    this.jumpEmitter?.killAll()
+    this.landEmitter?.stop()
+    this.landEmitter?.killAll()
+    this.dripEmitter?.stop()
+    this.dripEmitter?.killAll()
+    this.spikeEmitter?.stop()
+    this.spikeEmitter?.killAll()
+    this.trailEmitter?.stop()
+    this.trailEmitter?.killAll()
 
     this.walls?.clear(true, true)
     this.thinPlatforms?.clear(true, true)
@@ -500,11 +637,10 @@ class MainScene extends Phaser.Scene {
       this.player = sprite as Phaser.Physics.Arcade.Sprite
       const playerBody = this.player.body as Phaser.Physics.Arcade.Body
 
-
       // IMPORTANT: define body size in *source pixels* (before scale),
       // Phaser will scale the body automatically when you scale the sprite.
-      playerBody.setSize(18, 18);      // width, height (tune)
-      playerBody.setOffset(7, 4);     // x, y inside the 32x32 frame (tune)
+      playerBody.setSize(24, 20);      // width, height (tune)
+      playerBody.setOffset(4, 4);      // keep body aligned to visible slime pixels
 
       playerBody.setCollideWorldBounds(true)
       this.player.play('idle')
@@ -514,7 +650,10 @@ class MainScene extends Phaser.Scene {
         this.physics.add.existing(this.player)
         playerBody = this.player.body as Phaser.Physics.Arcade.Body
       }
-      playerBody.moves = true
+      // Re-apply physics body configuration
+      playerBody.setSize(24, 20)
+      playerBody.setOffset(4, 4)
+      playerBody.setCollideWorldBounds(true)
       playerBody.setVelocity(0, 0)
       this.player.setScale(2)
       this.player.setPosition(levelData.spawn.x, levelData.spawn.y)
@@ -529,7 +668,18 @@ class MainScene extends Phaser.Scene {
       this.player!,
       this.thinPlatforms!,
       undefined,
-      () => !this.isDripping,
+      (obj1, obj2) => {
+        // One-way thin platforms + drip-through behavior
+        const playerBody = (obj1 as any).body as Phaser.Physics.Arcade.Body
+        const platformBody = (obj2 as any).body as Phaser.Physics.Arcade.Body
+
+        return shouldThinPlatformCollide(
+          this.isDripping,
+          playerBody.bottom,
+          platformBody.top,
+          playerBody.velocity.y
+        )
+      },
       this
     )
 
@@ -565,6 +715,26 @@ class MainScene extends Phaser.Scene {
     }
   }
 
+  private setPhysicsDebugEnabled(enabled: boolean) {
+    const world = this.physics.world as Phaser.Physics.Arcade.World & {
+      createDebugGraphic?: () => Phaser.GameObjects.Graphics
+      debugGraphic?: Phaser.GameObjects.Graphics
+    }
+
+    if (enabled && !world.debugGraphic) {
+      world.createDebugGraphic?.()
+    }
+
+    world.drawDebug = enabled
+
+    if (world.debugGraphic) {
+      world.debugGraphic.setVisible(enabled)
+      if (!enabled) {
+        world.debugGraphic.clear()
+      }
+    }
+  }
+
   private stopIdleWobble() {
     if (!this.player || !this.idleTween) {
       return
@@ -591,7 +761,7 @@ const config: Phaser.Types.Core.GameConfig = {
     default: 'arcade',
     arcade: {
       gravity: { x: 0, y: 900 },
-      debug: true
+      debug: false
     }
   },
   scene: [TitleScene, MainScene, WinScene]

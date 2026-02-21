@@ -185,11 +185,216 @@ Explicitly out of scope for Squishroom v1:
 - Drip Drop mechanic
 - One room that requires drip
 
-### Milestone 4 -- Ship v1 (In Progress)
+### Milestone 4 -- Ship v1 (Done)
 - 6 single-screen rooms (Done)
 - Title screen (Done)
 - Win screen (Done)
-- Deployed on GitHub Pages / itch.io
+- Deployed on GitHub Pages (Done)
+
+### Milestone 5 -- Slime Identity Polish (Next)
+- Particle effects: goo drip trails
+- Wall slide mechanic
+- Screen shake + accessibility toggle
+- SFX integration
+- Scale/visibility tuning
+
+---
+
+## Milestone 5: Detailed Specs
+
+### Feature A: Particle Effects (Goo Drips)
+
+**Visual Purpose:** Make movement feel tactile and "slimy" — she leaves little goo trails as she moves.
+
+**Particles Needed:**
+1. **Jump Puff** — small burst on takeoff
+   - Color: player base color (#B58CFF)
+   - Count: 4-6 particles
+   - Lifetime: 0.3s
+   - Spread: 360° radial
+   - Velocity: small upward/outward
+
+2. **Land Splat** — bigger burst on ground impact
+   - Color: player base color (#B58CFF)
+   - Count: 8-10 particles
+   - Lifetime: 0.4s
+   - Direction: downward splash
+   - Squish visual (fall toward ground plane)
+
+3. **Drip Trail** — continuous during drip drop
+   - Color: player base (#B58CFF)
+   - Spawn rate: every 2-3 frames while dripping
+   - Lifetime: 0.5s
+   - Velocity: inherit fall speed, slight sideways drift
+   - Size: tiny (3-5px)
+
+4. **Spike Splat** — on hazard contact
+   - Color: player base (#B58CFF)
+   - Count: 12 particles (violent)
+   - Lifetime: 0.5s
+   - Direction: explosive outward
+   - Also triggers respawn, so particles should feel "dispersal"
+
+**Design Decision:** Start with player base color (#B58CFF) for all particles. Adjust tone/darkness in testing based on visual feedback.
+
+---
+
+### Feature B: Wall Slide Mechanic
+
+**Concept:** When pressing toward a wall while in air, player sticks to it and falls slowly. Reinforces "sticky slime girl" identity.
+
+**Mechanics:**
+- Player must be airborne (not on ground)
+- Player must be touching a wall (left or right collision)
+- Player must be pressing toward that wall (left key + left wall, OR right key + right wall)
+- When sliding: gravity reduced by 50% (slow fall speed)
+- **No horizontal input while sliding** (locked to wall, can't steer left/right)
+- Jump off: press opposite direction OR Space → releases upward with normal jump velocity
+
+**Design Decision:** Locked horizontal movement keeps wall slide simple and "sticky" feeling — she's *stuck* to the wall until she actively jumps away or presses opposite. This reinforces slime adhesion.
+
+**Animation State:**
+- Add new animation: `wallSlide` (can reuse jump frame or create a new "stuck" frame)
+- State machine: detect `wallSlide` condition and prioritize over other states
+
+**Frame:**
+- New sprite frame (optional): thin version of player pressed against wall
+- Placeholder: same as jump frame for now
+
+**Input for Testing:**
+```
+- Jump to wall
+- Press toward wall → slides down (slow)
+- Press away OR Space → releases upward
+```
+
+**Level Design Gate:**
+- Design 1 test room: requires wall slide to reach exit
+- Simple example: two tall walls with exit between them
+
+---
+
+### Feature C: Screen Shake + Accessibility Toggle
+
+**Screen Shake Events:**
+1. **On Land** — brief feedback (0.15s, **3-4px subtle**)
+   - Easing: ease-out
+
+2. **On Spike Hit** — brief feedback (0.15s, **3-4px subtle**, same as land)
+   - Easing: ease-out
+
+**Design Decision:** Subtle shake (3-4px) provides tactile feedback without causing motion sickness. Not on jump (would feel too constant).
+
+**Accessibility Toggle:**
+- Settings menu: "Screen Shake: ON / OFF"
+- Store in localStorage for persistence
+- Default: ON (opt-out for motion sickness)
+- When OFF: skip all camera.shake() calls
+
+**UI Placement:**
+- Title screen: add settings button (opens modal)
+- Modal: toggle switch for screen shake
+- Simple text + toggle, no fancy animations
+
+---
+
+### Feature D: SFX Integration Points
+
+**Audio Assets Needed** — Cozy Platformer + Slime Theme
+
+| Effect | Search Terms | Tone | Duration | Volume |
+|--------|--------------|------|----------|--------|
+| **jump.wav** | "spring bounce soft", "boing", "wet splurt" | Squishy, springy, wet | 0.15-0.2s | Moderate |
+| **land.wav** | "splat", "soft thud", "wet impact" | Soft impact, gooey | 0.2-0.3s | Moderate-Loud |
+| **drip.wav** | "drip water", "liquid drop", "slime drop" | Liquid, gravity | 0.2-0.3s | Quiet-Moderate |
+| **spike_hit.wav** | "splatter", "wet impact", "slime hit" | Wet, impactful | 0.3s | Loud |
+| **win_chime.wav** | "bells", "chime", "cheerful", "success" | Playful, melodic | 0.5-1s | Moderate |
+| **ui_confirm.wav** | "beep", "click", "confirm" | Simple, clear | 0.1s | Quiet-Moderate |
+
+**Freesound Search Strategy:**
+1. `jump.wav`: Search "wet spring" OR "splort sound" OR "boing soft"
+   - Tags: `#springy #wet #bounce`
+2. `land.wav`: Search "splat ground" OR "soft impact" OR "thud splat"
+   - Category: Foley > Impacts or SFX
+3. `drip.wav`: Search "water drop" OR "drip sound" OR "liquid drop"
+   - Tags: `#gravity #drip #liquid`
+4. `spike_hit.wav`: Search "wet splatter" OR "impact splat" OR "goo hit"
+   - Category: Foley > Impacts, SFX
+5. `win_chime.wav`: Search "bells cozy" OR "success chime" OR "cheerful sound"
+   - Look for "8-bit success" or "magical chime" in Music/Chimes
+6. `ui_confirm.wav`: Search "beep confirm" OR "click ui" OR "simple select"
+   - Category: UI Sounds, Menu
+
+**Asset Strategy:**
+- Primary: Freesound.org (free + CC-licensed, requires account)
+- Fallback: Jsfxr.net (browser SFX generator, instant prototyping)
+- Music: YouTube Audio Library or Incompetech.com
+
+**Integration Points in Code:**
+- Jump → play jump.wav (at velocity.y < 0)
+- Landing → play land.wav (just touched ground)
+- Drip activation → play drip.wav (whenever drip starts)
+- Spike collision → play spike_hit.wav (hazard contact)
+- Exit touch (final room) → play win_chime.wav (win scene)
+- Settings toggle / button interactions → play ui_confirm.wav
+
+**Music (Background Loop):**
+- One looping track (30-60s loop)
+- Royalty-free from YouTube Audio Library or Incompetech
+- Search: "cozy platformer" OR "indie game music" OR "slime" themes
+- Placement: play on MainScene.create(), fade out on WinScene
+- Alternative: Incompetech.com (free, CC-licensed, curated indie collections)
+
+---
+
+### Feature E: Scale & Visibility Tuning
+
+**Current State:** Player sprite is 2x scale (32px source → 64px visual)
+
+**Problem:** Hard to see on big monitors (1920x1080+)
+
+**Solution:** Test scale options in order:
+1. **Scale 2.5x (80px visual)** — first try, minor visibility boost
+2. **Scale 3x (96px visual)** — fallback if 2.5 still too small
+
+**Implementation:**
+- Change `sprite.setScale(2)` → `sprite.setScale(2.5)` in loadLevel()
+- Physics body stays 18x18 (offset 7,4) — scales automatically
+- Playtest: does she feel right visually?
+
+**Note:** Do NOT increase window size (would require redesigning all 6 levels). Just scale the sprite.
+
+---
+
+## Work Breakdown (Estimated)
+
+| Feature | Time | Dependency |
+|---------|------|------------|
+| A. Particles | 3-4 hrs | None |
+| B. Wall Slide | 2-3 hrs | None |
+| C. Screen Shake + Toggle | 2 hrs | Particles (for testing) |
+| D. SFX | 2-3 hrs (asset hunting) + 1 hr (integration) | None |
+| E. Scale Tuning | 0.5 hr | Playtest |
+| **Test Room + Playtest** | 1-2 hrs | A, B, C, D |
+| **TOTAL** | **11-16 hrs** | — |
+
+**Realistic Timeline:** 2-3 days (3-4 hrs/day focused work)
+
+---
+
+## Success Criteria
+
+**After Milestone 5, game should feel:**
+- ✅ Tactile (particles on every action)
+- ✅ "Slimy" (wall slide + drip visual fluidity)
+- ✅ Responsive (sound feedback on all input)
+- ✅ Accessible (screen shake toggle for motion sickness)
+- ✅ Visible (scale appropriate for large monitors)
+- ✅ Juicy (movement has *weight* and *feedback*)
+
+**Playtesting Question:** "Does the slime feel alive and fun to move?"
+- Before: No (just colored box)
+- After: YES (tactile, sonic, visual feedback)
 
 ---
 
