@@ -99,7 +99,7 @@ const LEVELS = [
     '#~~~~~~~~~~~~~~~~~~#',
     '#.^^^^^^^^^^^^^^^^^#',
     '#.##################',
-    '#..##############E##',
+    '#..#############.E.#',
     '##~#############...#',
     '#..................#',
     '#~#~~~~~~~~~~~~~~~~#',
@@ -207,7 +207,7 @@ class MainScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.spritesheet('player', '/assets/player.png', {
+    this.load.spritesheet('player', './assets/player.png', {
       frameWidth: 32,
       frameHeight: 32
     })
