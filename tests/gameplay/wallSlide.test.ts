@@ -22,8 +22,8 @@ describe('wallSlide gameplay rules', () => {
   })
 
   it('clamps downward velocity but preserves upward velocity', () => {
-    expect(getWallSlideVelocityY(500)).toBe(360)
-    expect(getWallSlideVelocityY(120)).toBe(120)
+    expect(getWallSlideVelocityY(500)).toBe(90)
+    expect(getWallSlideVelocityY(120)).toBe(90)
     expect(getWallSlideVelocityY(-200)).toBe(-200)
   })
 
@@ -35,7 +35,7 @@ describe('wallSlide gameplay rules', () => {
   })
 
   it('launches away from wall side with opposite x velocity', () => {
-    expect(getWallSlideJumpVelocityX('left')).toBe(180)
-    expect(getWallSlideJumpVelocityX('right')).toBe(-180)
+    expect(getWallSlideJumpVelocityX('left')).toBe(120)
+    expect(getWallSlideJumpVelocityX('right')).toBe(-120)
   })
 })
