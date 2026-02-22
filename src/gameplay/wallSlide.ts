@@ -68,6 +68,15 @@ export function getWallSlideSide(
   return undefined
 }
 
+
+/**
+ * Horizontal lock while wall sliding.
+ * Keep neutral by default to avoid seam jitter from inward push.
+ */
+export function getWallSlideLockVelocityX(): number {
+  return 0
+}
+
 /**
  * Clamps downward speed while wall sliding.
  * Upward velocity is preserved.
