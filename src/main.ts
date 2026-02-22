@@ -21,6 +21,7 @@ import {
 import { loadScreenShakeEnabled, saveScreenShakeEnabled } from './gameplay/accessibility'
 import { playTone } from './gameplay/sfx'
 import { applyPlayerBodyConfig } from './playerPhysics'
+import { getDeterministicDecals, getParallaxOffset } from './backgroundDepth'
 import {
   getTileRenderStyle,
   resolveRenderPaletteMode,
@@ -269,6 +270,11 @@ class MainScene extends Phaser.Scene {
   private renderSkinMode = resolveRenderSkinMode(window.location.search)
   private renderPaletteMode = resolveRenderPaletteMode(window.location.search)
   private decorativeLayerTiles: Phaser.GameObjects.Rectangle[] = []
+  private backgroundFarLayer?: Phaser.GameObjects.Container
+  private backgroundMidLayer?: Phaser.GameObjects.Container
+  private backgroundDecalLayer?: Phaser.GameObjects.Container
+  private currentLevelWidth = 0
+  private currentLevelHeight = 0
 
   constructor() {
     super('main')
@@ -434,6 +440,10 @@ class MainScene extends Phaser.Scene {
   update() {
     if (this.debugToggleKey && Phaser.Input.Keyboard.JustDown(this.debugToggleKey)) {
       this.setPhysicsDebugEnabled(!this.physics.world.drawDebug)
+    }
+
+    if (this.player) {
+      this.updateBackgroundParallax()
     }
 
     if (!this.player || !this.cursors || !this.keys || this.isComplete) {
@@ -755,6 +765,79 @@ class MainScene extends Phaser.Scene {
     this.decorativeLayerTiles.push(edge)
   }
 
+  private clearBackgroundDepth() {
+    this.backgroundFarLayer?.destroy(true)
+    this.backgroundMidLayer?.destroy(true)
+    this.backgroundDecalLayer?.destroy(true)
+    this.backgroundFarLayer = undefined
+    this.backgroundMidLayer = undefined
+    this.backgroundDecalLayer = undefined
+  }
+
+  private createBackgroundDepth(levelIndex: number, levelWidth: number, levelHeight: number) {
+    this.clearBackgroundDepth()
+
+    const centerX = levelWidth / 2
+    const centerY = levelHeight / 2
+
+    const farLayer = this.add.container(centerX, centerY)
+    farLayer.setDepth(-30)
+    farLayer.add(this.add.rectangle(0, 0, levelWidth, levelHeight, 0x101911, 1))
+    farLayer.add(this.add.rectangle(0, -levelHeight * 0.24, levelWidth * 1.2, levelHeight * 0.38, 0x1b2a1b, 0.3))
+    farLayer.add(this.add.rectangle(0, levelHeight * 0.28, levelWidth * 1.2, levelHeight * 0.34, 0x0d120d, 0.38))
+    this.backgroundFarLayer = farLayer
+
+    const midLayer = this.add.container(centerX, centerY)
+    midLayer.setDepth(-20)
+    midLayer.add(this.add.ellipse(-levelWidth * 0.26, -levelHeight * 0.17, 240, 120, 0x243b24, 0.18))
+    midLayer.add(this.add.ellipse(levelWidth * 0.22, -levelHeight * 0.08, 300, 130, 0x2c472d, 0.16))
+    midLayer.add(this.add.ellipse(-levelWidth * 0.1, levelHeight * 0.24, 340, 150, 0x203420, 0.14))
+    this.backgroundMidLayer = midLayer
+
+    const decalLayer = this.add.container(centerX, centerY)
+    decalLayer.setDepth(-10)
+    const decals = getDeterministicDecals(LEVELS[levelIndex], TILE_SIZE, levelIndex)
+    decals.forEach((decal) => {
+      const ellipse = this.add.ellipse(
+        decal.x - centerX,
+        decal.y - centerY,
+        decal.radius * 2.2,
+        decal.radius * 1.35,
+        decal.color,
+        decal.alpha
+      )
+      decalLayer.add(ellipse)
+    })
+    this.backgroundDecalLayer = decalLayer
+  }
+
+  private updateBackgroundParallax() {
+    if (!this.player) {
+      return
+    }
+
+    const centerX = this.currentLevelWidth / 2
+    const centerY = this.currentLevelHeight / 2
+
+    if (this.backgroundFarLayer) {
+      const offsetX = getParallaxOffset(this.player.x, centerX, 0.04, TILE_SIZE * 0.6)
+      const offsetY = getParallaxOffset(this.player.y, centerY, 0.03, TILE_SIZE * 0.45)
+      this.backgroundFarLayer.setPosition(centerX - offsetX, centerY - offsetY)
+    }
+
+    if (this.backgroundMidLayer) {
+      const offsetX = getParallaxOffset(this.player.x, centerX, 0.09, TILE_SIZE * 1.1)
+      const offsetY = getParallaxOffset(this.player.y, centerY, 0.05, TILE_SIZE * 0.8)
+      this.backgroundMidLayer.setPosition(centerX - offsetX, centerY - offsetY)
+    }
+
+    if (this.backgroundDecalLayer) {
+      const offsetX = getParallaxOffset(this.player.x, centerX, 0.12, TILE_SIZE * 1.25)
+      const offsetY = getParallaxOffset(this.player.y, centerY, 0.07, TILE_SIZE * 0.9)
+      this.backgroundDecalLayer.setPosition(centerX - offsetX, centerY - offsetY)
+    }
+  }
+
   private loadLevel(index: number) {
     const levelData = parseLevel(LEVELS[index], TILE_SIZE)
     const levelWidth = levelData.width
@@ -773,6 +856,7 @@ class MainScene extends Phaser.Scene {
     this.overlay?.destroy()
     this.levelText?.destroy()
     this.stopIdleWobble()
+    this.clearBackgroundDepth()
 
     // Stop and clear all particle emitters to prevent memory leak
     this.jumpEmitter?.stop()
@@ -794,6 +878,9 @@ class MainScene extends Phaser.Scene {
 
     this.physics.world.setBounds(0, 0, levelWidth, levelHeight)
     this.cameras.main.setBounds(0, 0, levelWidth, levelHeight)
+    this.currentLevelWidth = levelWidth
+    this.currentLevelHeight = levelHeight
+    this.createBackgroundDepth(index, levelWidth, levelHeight)
 
     this.spawnPoint = { x: levelData.spawn.x, y: levelData.spawn.y }
 

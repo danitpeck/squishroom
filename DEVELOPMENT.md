@@ -1,4 +1,4 @@
-# Development
+﻿# Development
 
 ## Workflow
 - Run tests before pushing: `npm run test`.
@@ -13,9 +13,15 @@
 - `npm run test:watch` during active changes.
 
 ## Current priorities
-1. Render Skin Layer foundation and tile skin mapping.
-2. Presentation polish (particles, shake/accessibility, SFX tuning).
-3. Short content expansion after visual baseline is complete.
+1. Background/depth pass (non-colliding layers, parallax, deterministic decals).
+2. Juice balance finalization (particles/shake/SFX targets and acceptance thresholds).
+3. Content expansion plus short playtest loop and documentation.
+
+## Progress Reporting Convention
+- Use `Done / In Progress / Next` labels in planning docs.
+- Every `Done` claim should reference evidence (module, test file, or command result) where possible.
+- Use conservative status updates: mark `Done` only when implementation and validation are both present.
+- Update planning docs after each phase completion or significant milestone.
 
 Reference docs:
 - `DESIGN.md`
@@ -32,3 +38,4 @@ Reference docs:
 - Build passes.
 - Changed behavior has regression coverage.
 - No undocumented gameplay semantic changes to ASCII glyphs.
+- Status docs are updated for completed phases.
