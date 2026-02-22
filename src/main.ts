@@ -430,7 +430,8 @@ class MainScene extends Phaser.Scene {
       body.blocked.left,
       body.blocked.right,
       body.touching.left,
-      body.touching.right
+      body.touching.right,
+      body.velocity.y < 0
     )
 
     const leftDown = this.cursors.left?.isDown || this.keys.left.isDown

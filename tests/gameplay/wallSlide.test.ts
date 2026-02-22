@@ -27,6 +27,13 @@ describe('wallSlide gameplay rules', () => {
     expect(shouldWallSlide(false, false, blockedLeft.touchingLeftWall, blockedLeft.touchingRightWall, true, false)).toBe(true)
   })
 
+
+  it('allows touching-only contacts while ascending to bridge block seams', () => {
+    const touchingWhileAscending = getWallSlideContacts(false, false, true, false, true)
+    expect(touchingWhileAscending.touchingLeftWall).toBe(true)
+    expect(shouldWallSlide(false, false, touchingWhileAscending.touchingLeftWall, touchingWhileAscending.touchingRightWall, true, false)).toBe(true)
+  })
+
   it('resolves wall side from contact + input', () => {
     expect(getWallSlideSide(true, false, true, false)).toBe('left')
     expect(getWallSlideSide(false, true, false, true)).toBe('right')

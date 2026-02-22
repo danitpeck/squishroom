@@ -15,12 +15,15 @@ const WALL_JUMP_LAUNCH_SPEED = 120
 export function getWallSlideContacts(
   blockedLeft: boolean,
   blockedRight: boolean,
-  _touchingLeft: boolean,
-  _touchingRight: boolean
+  touchingLeft: boolean,
+  touchingRight: boolean,
+  isAscending = false
 ): { touchingLeftWall: boolean; touchingRightWall: boolean } {
+  const allowTouchingBridge = isAscending
+
   return {
-    touchingLeftWall: blockedLeft,
-    touchingRightWall: blockedRight
+    touchingLeftWall: blockedLeft || (allowTouchingBridge && touchingLeft),
+    touchingRightWall: blockedRight || (allowTouchingBridge && touchingRight)
   }
 }
 
