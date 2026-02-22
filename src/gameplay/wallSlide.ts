@@ -68,22 +68,13 @@ export function shouldWallSlideJump(
   isWallSliding: boolean,
   wallSide: WallSide | undefined,
   jumpPressed: boolean,
-  jumpHeld: boolean,
-  justStartedWallSlide: boolean,
-  pressingLeft: boolean,
-  pressingRight: boolean
+  oppositePressed: boolean
 ): boolean {
   if (!isWallSliding || !wallSide) {
     return false
   }
 
-  const pressingOpposite =
-    (wallSide === 'left' && pressingRight) ||
-    (wallSide === 'right' && pressingLeft)
-
-  const bufferedJumpWhileLatching = jumpHeld && justStartedWallSlide
-
-  return jumpPressed || pressingOpposite || bufferedJumpWhileLatching
+  return jumpPressed || oppositePressed
 }
 
 /**
