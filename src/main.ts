@@ -17,8 +17,11 @@ import {
 import { loadScreenShakeEnabled, saveScreenShakeEnabled } from './gameplay/accessibility'
 import { playTone } from './gameplay/sfx'
 
-const TILE_SIZE = 40
 const PLAYER_SCALE = 2.5
+const BASE_PLAYER_SCALE = 2
+const BASE_TILE_SIZE = 40
+const WORLD_SCALE = PLAYER_SCALE / BASE_PLAYER_SCALE
+const TILE_SIZE = Math.round(BASE_TILE_SIZE * WORLD_SCALE)
 
 const LEVELS = [
   [
