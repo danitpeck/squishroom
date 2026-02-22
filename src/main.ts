@@ -18,6 +18,7 @@ import { loadScreenShakeEnabled, saveScreenShakeEnabled } from './gameplay/acces
 import { playTone } from './gameplay/sfx'
 
 const TILE_SIZE = 40
+const PLAYER_SCALE = 2.5
 
 const LEVELS = [
   [
@@ -426,8 +427,13 @@ class MainScene extends Phaser.Scene {
 
     const leftDown = this.cursors.left?.isDown || this.keys.left.isDown
     const rightDown = this.cursors.right?.isDown || this.keys.right.isDown
+    const leftPressed =
+      (this.cursors.left && Phaser.Input.Keyboard.JustDown(this.cursors.left)) ||
+      Phaser.Input.Keyboard.JustDown(this.keys.left)
+    const rightPressed =
+      (this.cursors.right && Phaser.Input.Keyboard.JustDown(this.cursors.right)) ||
+      Phaser.Input.Keyboard.JustDown(this.keys.right)
     const isMoving = leftDown || rightDown
-    const wasWallSliding = this.isWallSliding
     this.isWallSliding = shouldWallSlide(
       isOnGround,
       this.isDripping,
@@ -469,7 +475,6 @@ class MainScene extends Phaser.Scene {
     const jumpPressed =
       (this.cursors.up && Phaser.Input.Keyboard.JustDown(this.cursors.up)) ||
       Phaser.Input.Keyboard.JustDown(this.keys.jump)
-    const jumpHeld = !!(this.cursors.up?.isDown || this.keys.jump.isDown)
     const upPressed = this.cursors.up && Phaser.Input.Keyboard.JustDown(this.cursors.up)
 
     if (shouldJump(jumpPressed, upPressed, isOnGround)) {
@@ -479,16 +484,18 @@ class MainScene extends Phaser.Scene {
       this.playJumpStretch()
     }
 
+    const oppositePressed =
+      (wallSlideSide === 'left' && !!rightPressed) ||
+      (wallSlideSide === 'right' && !!leftPressed)
+
     if (
       shouldWallSlideJump(
         this.isWallSliding,
         wallSlideSide,
         !!jumpPressed,
-        jumpHeld,
-        !wasWallSliding,
-        !!leftDown,
-        !!rightDown
-      ) && wallSlideSide
+        oppositePressed
+      ) &&
+      wallSlideSide
     ) {
       this.stopIdleWobble()
       body.setVelocityY(getJumpVelocity())
@@ -755,7 +762,7 @@ class MainScene extends Phaser.Scene {
 
     if (!this.player) {
       const sprite = this.add.sprite(levelData.spawn.x, levelData.spawn.y, 'player', 0)
-      sprite.setScale(2)
+      sprite.setScale(PLAYER_SCALE)
       this.physics.add.existing(sprite)
       this.player = sprite as Phaser.Physics.Arcade.Sprite
       const playerBody = this.player.body as Phaser.Physics.Arcade.Body
@@ -778,7 +785,7 @@ class MainScene extends Phaser.Scene {
       playerBody.setOffset(4, 4)
       playerBody.setCollideWorldBounds(true)
       playerBody.setVelocity(0, 0)
-      this.player.setScale(2)
+      this.player.setScale(PLAYER_SCALE)
       this.player.setPosition(levelData.spawn.x, levelData.spawn.y)
       this.player.play('idle')
     }
@@ -866,8 +873,8 @@ class MainScene extends Phaser.Scene {
     this.idleTween.stop()
     this.idleTween.remove()
     this.idleTween = undefined
-    // Keep scale at 2
-    this.player.setScale(2)
+    // Keep configured scale
+    this.player.setScale(PLAYER_SCALE)
   }
 }
 
