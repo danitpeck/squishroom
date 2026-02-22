@@ -8,6 +8,7 @@ import { getNextAnimationKey, shouldChangeAnimation } from './gameplay/animation
 import { shouldStartDrip, getDripVelocity, getDripVelocityX, shouldEndDrip } from './gameplay/dripInput'
 import { shouldTriggerHazard, getHazardStateReset, getHazardVelocity, getHazardSplatScale } from './gameplay/hazardInteraction'
 import {
+  getWallSlideContacts,
   getWallSlideJumpVelocityX,
   getWallSlideSide,
   getWallSlideVelocityY,
@@ -425,8 +426,12 @@ class MainScene extends Phaser.Scene {
     const body = this.player.body as Phaser.Physics.Arcade.Body
     const speed = 220
     const isOnGround = body.blocked.down
-    const touchingLeftWall = body.blocked.left || body.touching.left
-    const touchingRightWall = body.blocked.right || body.touching.right
+    const { touchingLeftWall, touchingRightWall } = getWallSlideContacts(
+      body.blocked.left,
+      body.blocked.right,
+      body.touching.left,
+      body.touching.right
+    )
 
     const leftDown = this.cursors.left?.isDown || this.keys.left.isDown
     const rightDown = this.cursors.right?.isDown || this.keys.right.isDown
