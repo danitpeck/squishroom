@@ -23,18 +23,18 @@ const LEVELS = [
   [
     '####################',
     '#..S...............#',
-    '#..................#',
-    '#..................#',
-    '#..................#',
-    '#..................#',
-    '#..................#',
-    '#..................#',
-    '#........####...E..#',
-    '#..................#',
-    '#......##..........#',
-    '#..................#',
-    '#....##............#',
-    '#..................#',
+    '#..#######.........#',
+    '#........#.........#',
+    '#........#.....E...#',
+    '#........#..####...#',
+    '#........#.........#',
+    '#........#.........#',
+    '#...###..#####.....#',
+    '#...#....#.........#',
+    '#...#....#.........#',
+    '#...#....#.........#',
+    '#...#....#.........#',
+    '#...######.........#',
     '####################'
   ],
   [
@@ -237,6 +237,7 @@ class MainScene extends Phaser.Scene {
   private isComplete = false
   private isDripping = false
   private isWallSliding = false
+  private lastAirborneFallSpeed = 0
   private levelIndex = 0
   private idleTween?: Phaser.Tweens.Tween
   private spawnPoint = { x: TILE_SIZE / 2, y: TILE_SIZE / 2 }
@@ -280,6 +281,7 @@ class MainScene extends Phaser.Scene {
     this.justLanded = false
     this.isDripping = false
     this.isWallSliding = false
+    this.lastAirborneFallSpeed = 0
     this.nextTrailAt = 0
 
     // Create a simple particle texture (only once)
@@ -425,6 +427,7 @@ class MainScene extends Phaser.Scene {
     const leftDown = this.cursors.left?.isDown || this.keys.left.isDown
     const rightDown = this.cursors.right?.isDown || this.keys.right.isDown
     const isMoving = leftDown || rightDown
+    const wasWallSliding = this.isWallSliding
     this.isWallSliding = shouldWallSlide(
       isOnGround,
       this.isDripping,
@@ -466,6 +469,7 @@ class MainScene extends Phaser.Scene {
     const jumpPressed =
       (this.cursors.up && Phaser.Input.Keyboard.JustDown(this.cursors.up)) ||
       Phaser.Input.Keyboard.JustDown(this.keys.jump)
+    const jumpHeld = !!(this.cursors.up?.isDown || this.keys.jump.isDown)
     const upPressed = this.cursors.up && Phaser.Input.Keyboard.JustDown(this.cursors.up)
 
     if (shouldJump(jumpPressed, upPressed, isOnGround)) {
@@ -475,13 +479,27 @@ class MainScene extends Phaser.Scene {
       this.playJumpStretch()
     }
 
-    if (shouldWallSlideJump(this.isWallSliding, wallSlideSide, !!jumpPressed, !!leftDown, !!rightDown) && wallSlideSide) {
+    if (
+      shouldWallSlideJump(
+        this.isWallSliding,
+        wallSlideSide,
+        !!jumpPressed,
+        jumpHeld,
+        !wasWallSliding,
+        !!leftDown,
+        !!rightDown
+      ) && wallSlideSide
+    ) {
       this.stopIdleWobble()
       body.setVelocityY(getJumpVelocity())
       body.setVelocityX(getWallSlideJumpVelocityX(wallSlideSide))
       this.justLanded = false
       this.playJumpStretch()
       this.isWallSliding = false
+    }
+
+    if (!isOnGround && body.velocity.y > 0) {
+      this.lastAirborneFallSpeed = Math.max(this.lastAirborneFallSpeed, body.velocity.y)
     }
 
     // Drip
@@ -509,7 +527,8 @@ class MainScene extends Phaser.Scene {
     // Landing detection
     if (!this.wasOnGround && isOnGround) {
       this.justLanded = true
-      this.playLandSquash()
+      this.playLandSquash(this.lastAirborneFallSpeed, this.isDripping)
+      this.lastAirborneFallSpeed = 0
     }
 
     if (shouldEndDrip(isOnGround)) {
@@ -589,7 +608,6 @@ class MainScene extends Phaser.Scene {
 
     this.isComplete = true
     playTone(this.sound, { frequency: 520, frequencyEnd: 780, durationMs: 260, volume: 0.035, type: 'sine' })
-    this.triggerScreenShake(0.004, 200)
     this.scene.start('win')
   }
 
@@ -603,7 +621,6 @@ class MainScene extends Phaser.Scene {
       this.spikeEmitter.emitParticleAt(this.player!.x, this.player!.y, 12)
     }
     playTone(this.sound, { frequency: 180, frequencyEnd: 90, durationMs: 140, volume: 0.045, type: 'sawtooth' })
-    this.triggerScreenShake(0.012, 130)
 
     // Apply hazard state reset
     const reset = getHazardStateReset()
@@ -634,7 +651,7 @@ class MainScene extends Phaser.Scene {
     playTone(this.sound, { frequency: 460, frequencyEnd: 580, durationMs: 90, volume: 0.025, type: 'square' })
   }
 
-  private playLandSquash() {
+  private playLandSquash(impactSpeed: number, fromDrip: boolean) {
     if (!this.player) {
       return
     }
@@ -645,7 +662,20 @@ class MainScene extends Phaser.Scene {
       this.landEmitter.emitParticleAt(this.player.x, this.player.y + 17, 12)
     }
     playTone(this.sound, { frequency: 190, frequencyEnd: 140, durationMs: 80, volume: 0.03, type: 'triangle' })
-    this.triggerScreenShake(0.004, 80)
+
+    if (fromDrip) {
+      this.triggerScreenShake(0.009, 130)
+      return
+    }
+
+    if (impactSpeed < 220) {
+      return
+    }
+
+    const normalizedImpact = Phaser.Math.Clamp((impactSpeed - 220) / 380, 0, 1)
+    const intensity = Phaser.Math.Linear(0.0006, 0.0021, normalizedImpact)
+    const durationMs = Math.round(Phaser.Math.Linear(35, 70, normalizedImpact))
+    this.triggerScreenShake(intensity, durationMs)
   }
 
   private triggerScreenShake(intensity: number, durationMs: number) {
@@ -666,6 +696,7 @@ class MainScene extends Phaser.Scene {
     this.isDripping = false
     this.isWallSliding = false
     this.wasOnGround = false
+    this.lastAirborneFallSpeed = 0
 
     this.exitZone?.destroy()
     this.overlay?.destroy()
