@@ -28,10 +28,15 @@ describe('wallSlide gameplay rules', () => {
   })
 
   it('allows jump away using jump key or opposite direction', () => {
-    expect(shouldWallSlideJump(true, 'left', true, false, false)).toBe(true)
-    expect(shouldWallSlideJump(true, 'left', false, false, true)).toBe(true)
-    expect(shouldWallSlideJump(true, 'right', false, true, false)).toBe(true)
-    expect(shouldWallSlideJump(true, 'left', false, true, false)).toBe(false)
+    expect(shouldWallSlideJump(true, 'left', true, false, false, false, false)).toBe(true)
+    expect(shouldWallSlideJump(true, 'left', false, false, false, false, true)).toBe(true)
+    expect(shouldWallSlideJump(true, 'right', false, false, false, true, false)).toBe(true)
+    expect(shouldWallSlideJump(true, 'left', false, false, false, true, false)).toBe(false)
+  })
+
+  it('consumes held jump when wall slide first starts', () => {
+    expect(shouldWallSlideJump(true, 'left', false, true, true, true, false)).toBe(true)
+    expect(shouldWallSlideJump(true, 'left', false, true, false, true, false)).toBe(false)
   })
 
   it('launches away from wall side with opposite x velocity', () => {
