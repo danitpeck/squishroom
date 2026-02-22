@@ -14,6 +14,8 @@ import {
   shouldWallSlide,
   shouldWallSlideJump
 } from './gameplay/wallSlide'
+import { loadScreenShakeEnabled, saveScreenShakeEnabled } from './gameplay/accessibility'
+import { playTone } from './gameplay/sfx'
 
 const TILE_SIZE = 40
 
@@ -129,6 +131,7 @@ class TitleScene extends Phaser.Scene {
 
   create() {
     const { width, height } = this.cameras.main
+    let screenShakeEnabled = loadScreenShakeEnabled(window.localStorage)
 
     this.add
       .text(width / 2, height / 2 - 40, 'Squishroom', {
@@ -146,8 +149,29 @@ class TitleScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
 
+    const shakeText = this.add
+      .text(width / 2, height / 2 + 64, '', {
+        fontSize: '16px',
+        color: '#9fb59a',
+        fontFamily: 'Trebuchet MS, sans-serif'
+      })
+      .setOrigin(0.5)
+
+    const updateShakeText = () => {
+      shakeText.setText(`Screen Shake: ${screenShakeEnabled ? 'ON' : 'OFF'} (Press T)`) 
+    }
+    updateShakeText()
+
     const space = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
     const enter = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER)
+    const toggleShake = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.T)
+
+    toggleShake?.on('down', () => {
+      screenShakeEnabled = !screenShakeEnabled
+      saveScreenShakeEnabled(window.localStorage, screenShakeEnabled)
+      updateShakeText()
+      playTone(this.sound, { frequency: 650, durationMs: 80, volume: 0.025, type: 'triangle' })
+    })
 
     this.input.keyboard?.once('keydown', (event: KeyboardEvent) => {
       if (event.code === 'Space' || event.code === 'Enter') {
@@ -223,6 +247,7 @@ class MainScene extends Phaser.Scene {
   private trailEmitter?: Phaser.GameObjects.Particles.ParticleEmitter
   private nextTrailAt = 0
   private debugToggleKey?: Phaser.Input.Keyboard.Key
+  private screenShakeEnabled = true
 
   constructor() {
     super('main')
@@ -245,6 +270,7 @@ class MainScene extends Phaser.Scene {
       down: Phaser.Input.Keyboard.KeyCodes.S
     }) as typeof this.keys
     this.debugToggleKey = keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.F1)
+    this.screenShakeEnabled = loadScreenShakeEnabled(window.localStorage)
     this.setPhysicsDebugEnabled(false)
 
     // Reset player for fresh start
@@ -393,8 +419,8 @@ class MainScene extends Phaser.Scene {
     const body = this.player.body as Phaser.Physics.Arcade.Body
     const speed = 220
     const isOnGround = body.blocked.down
-    const touchingLeftWall = body.blocked.left
-    const touchingRightWall = body.blocked.right
+    const touchingLeftWall = body.blocked.left || body.touching.left
+    const touchingRightWall = body.blocked.right || body.touching.right
 
     const leftDown = this.cursors.left?.isDown || this.keys.left.isDown
     const rightDown = this.cursors.right?.isDown || this.keys.right.isDown
@@ -413,6 +439,7 @@ class MainScene extends Phaser.Scene {
       !!leftDown,
       !!rightDown
     )
+    const wallSlideLockVelocityX = wallSlideSide === 'left' ? -20 : wallSlideSide === 'right' ? 20 : 0
 
     // Movement
     if (!this.isDripping && !this.isWallSliding) {
@@ -431,7 +458,7 @@ class MainScene extends Phaser.Scene {
     }
 
     if (this.isWallSliding) {
-      body.setVelocityX(0)
+      body.setVelocityX(wallSlideLockVelocityX)
       body.setVelocityY(getWallSlideVelocityY(body.velocity.y))
     }
 
@@ -467,6 +494,7 @@ class MainScene extends Phaser.Scene {
       this.isDrippingParticles = true
       body.setVelocityX(getDripVelocityX())
       body.setVelocityY(getDripVelocity())
+      playTone(this.sound, { frequency: 420, frequencyEnd: 180, durationMs: 120, volume: 0.03, type: 'triangle' })
     }
 
     const jumpReleased =
@@ -560,6 +588,8 @@ class MainScene extends Phaser.Scene {
     }
 
     this.isComplete = true
+    playTone(this.sound, { frequency: 520, frequencyEnd: 780, durationMs: 260, volume: 0.035, type: 'sine' })
+    this.triggerScreenShake(0.004, 200)
     this.scene.start('win')
   }
 
@@ -572,6 +602,8 @@ class MainScene extends Phaser.Scene {
     if (this.spikeEmitter) {
       this.spikeEmitter.emitParticleAt(this.player!.x, this.player!.y, 12)
     }
+    playTone(this.sound, { frequency: 180, frequencyEnd: 90, durationMs: 140, volume: 0.045, type: 'sawtooth' })
+    this.triggerScreenShake(0.012, 130)
 
     // Apply hazard state reset
     const reset = getHazardStateReset()
@@ -599,6 +631,7 @@ class MainScene extends Phaser.Scene {
     if (this.jumpEmitter) {
       this.jumpEmitter.emitParticleAt(this.player.x, this.player.y + 17, 6)
     }
+    playTone(this.sound, { frequency: 460, frequencyEnd: 580, durationMs: 90, volume: 0.025, type: 'square' })
   }
 
   private playLandSquash() {
@@ -611,6 +644,16 @@ class MainScene extends Phaser.Scene {
     if (this.landEmitter) {
       this.landEmitter.emitParticleAt(this.player.x, this.player.y + 17, 12)
     }
+    playTone(this.sound, { frequency: 190, frequencyEnd: 140, durationMs: 80, volume: 0.03, type: 'triangle' })
+    this.triggerScreenShake(0.004, 80)
+  }
+
+  private triggerScreenShake(intensity: number, durationMs: number) {
+    if (!this.screenShakeEnabled) {
+      return
+    }
+
+    this.cameras.main.shake(durationMs, intensity)
   }
 
   private loadLevel(index: number) {
