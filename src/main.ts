@@ -21,7 +21,12 @@ import {
 import { loadScreenShakeEnabled, saveScreenShakeEnabled } from './gameplay/accessibility'
 import { playTone } from './gameplay/sfx'
 import { applyPlayerBodyConfig } from './playerPhysics'
-import { getTileRenderStyle, resolveRenderSkinMode, type TileRenderStyle } from './renderSkin'
+import {
+  getTileRenderStyle,
+  resolveRenderPaletteMode,
+  resolveRenderSkinMode,
+  type TileRenderStyle
+} from './renderSkin'
 
 const PLAYER_SCALE = 2
 const BASE_PLAYER_SCALE = 2
@@ -262,6 +267,8 @@ class MainScene extends Phaser.Scene {
   private debugToggleKey?: Phaser.Input.Keyboard.Key
   private screenShakeEnabled = true
   private renderSkinMode = resolveRenderSkinMode(window.location.search)
+  private renderPaletteMode = resolveRenderPaletteMode(window.location.search)
+  private decorativeLayerTiles: Phaser.GameObjects.Rectangle[] = []
 
   constructor() {
     super('main')
@@ -737,6 +744,17 @@ class MainScene extends Phaser.Scene {
     return tile
   }
 
+  private createDecorativeEdge(x: number, y: number, width: number, height: number, style: TileRenderStyle) {
+    if (!style.edgeColor || !style.edgeHeightScale) {
+      return
+    }
+
+    const edgeHeight = Math.max(2, height * style.edgeHeightScale)
+    const edge = this.add.rectangle(x, y - height / 2 + edgeHeight / 2, width, edgeHeight, style.edgeColor, 0.45)
+    edge.setDepth(1)
+    this.decorativeLayerTiles.push(edge)
+  }
+
   private loadLevel(index: number) {
     const levelData = parseLevel(LEVELS[index], TILE_SIZE)
     const levelWidth = levelData.width
@@ -771,31 +789,36 @@ class MainScene extends Phaser.Scene {
     this.walls?.clear(true, true)
     this.thinPlatforms?.clear(true, true)
     this.hazards?.clear(true, true)
+    this.decorativeLayerTiles.forEach((tile) => tile.destroy())
+    this.decorativeLayerTiles = []
 
     this.physics.world.setBounds(0, 0, levelWidth, levelHeight)
     this.cameras.main.setBounds(0, 0, levelWidth, levelHeight)
 
     this.spawnPoint = { x: levelData.spawn.x, y: levelData.spawn.y }
 
-    const wallStyle = getTileRenderStyle('#', this.renderSkinMode)
-    const thinStyle = getTileRenderStyle('~', this.renderSkinMode)
-    const hazardStyle = getTileRenderStyle('^', this.renderSkinMode)
-    const exitStyle = getTileRenderStyle('E', this.renderSkinMode)
+    const wallStyle = getTileRenderStyle('#', this.renderSkinMode, this.renderPaletteMode)
+    const thinStyle = getTileRenderStyle('~', this.renderSkinMode, this.renderPaletteMode)
+    const hazardStyle = getTileRenderStyle('^', this.renderSkinMode, this.renderPaletteMode)
+    const exitStyle = getTileRenderStyle('E', this.renderSkinMode, this.renderPaletteMode)
 
     levelData.wallSegments.forEach(({ x, y, width, height }) => {
       const wall = this.createTileRect(x, y, width, height, wallStyle)
+      this.createDecorativeEdge(x, y, width, height, wallStyle)
       this.physics.add.existing(wall, true)
       this.walls!.add(wall)
     })
 
     levelData.thinPlatforms.forEach(({ x, y }) => {
       const thin = this.createTileRect(x, y, TILE_SIZE, TILE_SIZE, thinStyle)
+      this.createDecorativeEdge(thin.x, thin.y, thin.width, thin.height, thinStyle)
       this.physics.add.existing(thin, true)
       this.thinPlatforms!.add(thin)
     })
 
     levelData.hazards.forEach(({ x, y }) => {
       const hazard = this.createTileRect(x, y, TILE_SIZE, TILE_SIZE, hazardStyle)
+      this.createDecorativeEdge(hazard.x, hazard.y, hazard.width, hazard.height, hazardStyle)
       this.physics.add.existing(hazard, true)
       this.hazards!.add(hazard)
     })
