@@ -9,6 +9,22 @@ const MAX_WALL_SLIDE_SPEED = 90
 const WALL_JUMP_LAUNCH_SPEED = 120
 
 /**
+ * Wall-slide should only consider persistent blocked side contacts.
+ * `touching` values can stay true on transient corner separation frames.
+ */
+export function getWallSlideContacts(
+  blockedLeft: boolean,
+  blockedRight: boolean,
+  _touchingLeft: boolean,
+  _touchingRight: boolean
+): { touchingLeftWall: boolean; touchingRightWall: boolean } {
+  return {
+    touchingLeftWall: blockedLeft,
+    touchingRightWall: blockedRight
+  }
+}
+
+/**
  * Determines whether wall slide should be active.
  */
 export function shouldWallSlide(

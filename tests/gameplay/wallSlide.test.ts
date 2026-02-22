@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  getWallSlideContacts,
   getWallSlideJumpVelocityX,
   getWallSlideSide,
   getWallSlideVelocityY,
@@ -13,6 +14,17 @@ describe('wallSlide gameplay rules', () => {
     expect(shouldWallSlide(false, false, false, true, false, true)).toBe(true)
     expect(shouldWallSlide(true, false, true, false, true, false)).toBe(false)
     expect(shouldWallSlide(false, true, true, false, true, false)).toBe(false)
+  })
+
+
+  it('ignores touching-only side contacts to prevent sticky stacked-tile wall slide', () => {
+    const touchingOnly = getWallSlideContacts(false, false, true, false)
+    expect(touchingOnly.touchingLeftWall).toBe(false)
+    expect(shouldWallSlide(false, false, touchingOnly.touchingLeftWall, touchingOnly.touchingRightWall, true, false)).toBe(false)
+
+    const blockedLeft = getWallSlideContacts(true, false, true, false)
+    expect(blockedLeft.touchingLeftWall).toBe(true)
+    expect(shouldWallSlide(false, false, blockedLeft.touchingLeftWall, blockedLeft.touchingRightWall, true, false)).toBe(true)
   })
 
   it('resolves wall side from contact + input', () => {
