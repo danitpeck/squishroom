@@ -13,8 +13,10 @@ import {
   getWallSlideLockVelocityX,
   getWallSlideSide,
   getWallSlideVelocityY,
+  hasWallJumpGrace,
   shouldWallSlide,
-  shouldWallSlideJump
+  shouldWallSlideJump,
+  type WallSide
 } from './gameplay/wallSlide'
 import { loadScreenShakeEnabled, saveScreenShakeEnabled } from './gameplay/accessibility'
 import { playTone } from './gameplay/sfx'
@@ -243,6 +245,8 @@ class MainScene extends Phaser.Scene {
   private isComplete = false
   private isDripping = false
   private isWallSliding = false
+  private lastWallContactAt = Number.NEGATIVE_INFINITY
+  private lastWallSide: WallSide | undefined
   private lastAirborneFallSpeed = 0
   private levelIndex = 0
   private idleTween?: Phaser.Tweens.Tween
@@ -287,6 +291,8 @@ class MainScene extends Phaser.Scene {
     this.justLanded = false
     this.isDripping = false
     this.isWallSliding = false
+    this.lastWallContactAt = Number.NEGATIVE_INFINITY
+    this.lastWallSide = undefined
     this.lastAirborneFallSpeed = 0
     this.nextTrailAt = 0
 
@@ -458,6 +464,16 @@ class MainScene extends Phaser.Scene {
       !!leftDown,
       !!rightDown
     )
+    if (wallSlideSide) {
+      this.lastWallSide = wallSlideSide
+      this.lastWallContactAt = this.time.now
+    }
+    const wallJumpInGraceWindow =
+      !isOnGround &&
+      !this.isDripping &&
+      this.lastWallSide !== undefined &&
+      hasWallJumpGrace(this.time.now - this.lastWallContactAt)
+    const effectiveWallSide = wallSlideSide ?? (wallJumpInGraceWindow ? this.lastWallSide : undefined)
     const wallSlideLockVelocityX = getWallSlideLockVelocityX()
 
     // Movement
@@ -495,24 +511,26 @@ class MainScene extends Phaser.Scene {
     }
 
     const oppositePressed =
-      (wallSlideSide === 'left' && !!rightPressed) ||
-      (wallSlideSide === 'right' && !!leftPressed)
+      (effectiveWallSide === 'left' && !!rightPressed) ||
+      (effectiveWallSide === 'right' && !!leftPressed)
 
     if (
       shouldWallSlideJump(
-        this.isWallSliding,
-        wallSlideSide,
+        this.isWallSliding || wallJumpInGraceWindow,
+        effectiveWallSide,
         !!jumpPressed,
         oppositePressed
       ) &&
-      wallSlideSide
+      effectiveWallSide
     ) {
       this.stopIdleWobble()
       body.setVelocityY(getJumpVelocity())
-      body.setVelocityX(getWallSlideJumpVelocityX(wallSlideSide))
+      body.setVelocityX(getWallSlideJumpVelocityX(effectiveWallSide))
       this.justLanded = false
       this.playJumpStretch()
       this.isWallSliding = false
+      this.lastWallContactAt = Number.NEGATIVE_INFINITY
+      this.lastWallSide = undefined
     }
 
     if (!isOnGround && body.velocity.y > 0) {
@@ -712,6 +730,8 @@ class MainScene extends Phaser.Scene {
     this.isComplete = false
     this.isDripping = false
     this.isWallSliding = false
+    this.lastWallContactAt = Number.NEGATIVE_INFINITY
+    this.lastWallSide = undefined
     this.wasOnGround = false
     this.lastAirborneFallSpeed = 0
 

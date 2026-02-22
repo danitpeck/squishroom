@@ -5,6 +5,7 @@ import {
   getWallSlideLockVelocityX,
   getWallSlideSide,
   getWallSlideVelocityY,
+  hasWallJumpGrace,
   shouldWallSlide,
   shouldWallSlideJump
 } from '../../src/gameplay/wallSlide'
@@ -56,6 +57,14 @@ describe('wallSlide gameplay rules', () => {
     expect(shouldWallSlideJump(true, 'left', false, true)).toBe(true)
     expect(shouldWallSlideJump(true, 'right', false, true)).toBe(true)
     expect(shouldWallSlideJump(true, 'left', false, false)).toBe(false)
+  })
+
+
+  it('keeps wall jump available briefly after losing contact', () => {
+    expect(hasWallJumpGrace(0)).toBe(true)
+    expect(hasWallJumpGrace(80)).toBe(true)
+    expect(hasWallJumpGrace(120)).toBe(true)
+    expect(hasWallJumpGrace(121)).toBe(false)
   })
 
   it('launches away from wall side with opposite x velocity', () => {

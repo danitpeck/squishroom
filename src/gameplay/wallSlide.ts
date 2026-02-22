@@ -7,6 +7,7 @@ export type WallSide = 'left' | 'right'
 
 const MAX_WALL_SLIDE_SPEED = 90
 const WALL_JUMP_LAUNCH_SPEED = 120
+const WALL_JUMP_GRACE_MS = 120
 
 /**
  * Wall-slide should only consider persistent blocked side contacts.
@@ -104,6 +105,13 @@ export function shouldWallSlideJump(
   }
 
   return jumpPressed || oppositePressed
+}
+
+/**
+ * Brief coyote-time for wall jumps to smooth out collision seam flicker.
+ */
+export function hasWallJumpGrace(msSinceLastWallContact: number): boolean {
+  return msSinceLastWallContact <= WALL_JUMP_GRACE_MS
 }
 
 /**
