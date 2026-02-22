@@ -20,6 +20,13 @@ import {
 } from './gameplay/wallSlide'
 import { loadScreenShakeEnabled, saveScreenShakeEnabled } from './gameplay/accessibility'
 import { playTone } from './gameplay/sfx'
+import { applyPlayerBodyConfig } from './playerPhysics'
+import {
+  getTileRenderStyle,
+  resolveRenderPaletteMode,
+  resolveRenderSkinMode,
+  type TileRenderStyle
+} from './renderSkin'
 
 const PLAYER_SCALE = 2
 const BASE_PLAYER_SCALE = 2
@@ -259,6 +266,9 @@ class MainScene extends Phaser.Scene {
   private nextTrailAt = 0
   private debugToggleKey?: Phaser.Input.Keyboard.Key
   private screenShakeEnabled = true
+  private renderSkinMode = resolveRenderSkinMode(window.location.search)
+  private renderPaletteMode = resolveRenderPaletteMode(window.location.search)
+  private decorativeLayerTiles: Phaser.GameObjects.Rectangle[] = []
 
   constructor() {
     super('main')
@@ -721,6 +731,30 @@ class MainScene extends Phaser.Scene {
     this.cameras.main.shake(durationMs, intensity)
   }
 
+  private createTileRect(x: number, y: number, baseWidth: number, baseHeight: number, style: TileRenderStyle) {
+    const width = baseWidth * (style.widthScale ?? 1)
+    const height = baseHeight * (style.heightScale ?? 1)
+    const yOffset = baseHeight * (style.yOffsetScale ?? 0)
+    const tile = this.add.rectangle(x, y + yOffset, width, height, style.fillColor, style.alpha ?? 1)
+
+    if (style.strokeColor !== undefined && style.strokeWidth !== undefined) {
+      tile.setStrokeStyle(style.strokeWidth, style.strokeColor, 0.9)
+    }
+
+    return tile
+  }
+
+  private createDecorativeEdge(x: number, y: number, width: number, height: number, style: TileRenderStyle) {
+    if (!style.edgeColor || !style.edgeHeightScale) {
+      return
+    }
+
+    const edgeHeight = Math.max(2, height * style.edgeHeightScale)
+    const edge = this.add.rectangle(x, y - height / 2 + edgeHeight / 2, width, edgeHeight, style.edgeColor, 0.45)
+    edge.setDepth(1)
+    this.decorativeLayerTiles.push(edge)
+  }
+
   private loadLevel(index: number) {
     const levelData = parseLevel(LEVELS[index], TILE_SIZE)
     const levelWidth = levelData.width
@@ -755,38 +789,42 @@ class MainScene extends Phaser.Scene {
     this.walls?.clear(true, true)
     this.thinPlatforms?.clear(true, true)
     this.hazards?.clear(true, true)
+    this.decorativeLayerTiles.forEach((tile) => tile.destroy())
+    this.decorativeLayerTiles = []
 
     this.physics.world.setBounds(0, 0, levelWidth, levelHeight)
     this.cameras.main.setBounds(0, 0, levelWidth, levelHeight)
 
     this.spawnPoint = { x: levelData.spawn.x, y: levelData.spawn.y }
 
+    const wallStyle = getTileRenderStyle('#', this.renderSkinMode, this.renderPaletteMode)
+    const thinStyle = getTileRenderStyle('~', this.renderSkinMode, this.renderPaletteMode)
+    const hazardStyle = getTileRenderStyle('^', this.renderSkinMode, this.renderPaletteMode)
+    const exitStyle = getTileRenderStyle('E', this.renderSkinMode, this.renderPaletteMode)
+
     levelData.wallSegments.forEach(({ x, y, width, height }) => {
-      const wall = this.add.rectangle(x, y, width, height, 0x3f5d3a)
+      const wall = this.createTileRect(x, y, width, height, wallStyle)
+      this.createDecorativeEdge(x, y, width, height, wallStyle)
       this.physics.add.existing(wall, true)
       this.walls!.add(wall)
     })
 
     levelData.thinPlatforms.forEach(({ x, y }) => {
-      const thin = this.add.rectangle(x, y, TILE_SIZE, TILE_SIZE * 0.35, 0x7aa17a)
+      const thin = this.createTileRect(x, y, TILE_SIZE, TILE_SIZE, thinStyle)
+      this.createDecorativeEdge(thin.x, thin.y, thin.width, thin.height, thinStyle)
       this.physics.add.existing(thin, true)
       this.thinPlatforms!.add(thin)
     })
 
     levelData.hazards.forEach(({ x, y }) => {
-      const hazard = this.add.rectangle(x, y, TILE_SIZE * 0.7, TILE_SIZE * 0.4, 0xd24a43)
+      const hazard = this.createTileRect(x, y, TILE_SIZE, TILE_SIZE, hazardStyle)
+      this.createDecorativeEdge(hazard.x, hazard.y, hazard.width, hazard.height, hazardStyle)
       this.physics.add.existing(hazard, true)
       this.hazards!.add(hazard)
     })
 
     if (levelData.exit) {
-      this.exitZone = this.add.rectangle(
-        levelData.exit.x,
-        levelData.exit.y,
-        TILE_SIZE * 0.8,
-        TILE_SIZE * 0.6,
-        0xd4c24f
-      )
+      this.exitZone = this.createTileRect(levelData.exit.x, levelData.exit.y, TILE_SIZE, TILE_SIZE, exitStyle)
       this.physics.add.existing(this.exitZone, true)
     }
 
@@ -797,12 +835,7 @@ class MainScene extends Phaser.Scene {
       this.player = sprite as Phaser.Physics.Arcade.Sprite
       const playerBody = this.player.body as Phaser.Physics.Arcade.Body
 
-      // IMPORTANT: define body size in *source pixels* (before scale),
-      // Phaser will scale the body automatically when you scale the sprite.
-      playerBody.setSize(24, 20);      // width, height (tune)
-      playerBody.setOffset(4, 4);      // keep body aligned to visible slime pixels
-
-      playerBody.setCollideWorldBounds(true)
+      applyPlayerBodyConfig(playerBody)
       this.player.play('idle')
     } else {
       let playerBody = this.player.body as Phaser.Physics.Arcade.Body | null
@@ -811,9 +844,7 @@ class MainScene extends Phaser.Scene {
         playerBody = this.player.body as Phaser.Physics.Arcade.Body
       }
       // Re-apply physics body configuration
-      playerBody.setSize(24, 20)
-      playerBody.setOffset(4, 4)
-      playerBody.setCollideWorldBounds(true)
+      applyPlayerBodyConfig(playerBody)
       playerBody.setVelocity(0, 0)
       this.player.setScale(PLAYER_SCALE)
       this.player.setPosition(levelData.spawn.x, levelData.spawn.y)
