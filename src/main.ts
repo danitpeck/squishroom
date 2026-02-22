@@ -7,6 +7,13 @@ import { shouldEmitTrail, getNextTrailTime, getTrailOffsetX, getTrailJitterX, ge
 import { getNextAnimationKey, shouldChangeAnimation } from './gameplay/animationState'
 import { shouldStartDrip, getDripVelocity, getDripVelocityX, shouldEndDrip } from './gameplay/dripInput'
 import { shouldTriggerHazard, getHazardStateReset, getHazardVelocity, getHazardSplatScale } from './gameplay/hazardInteraction'
+import {
+  getWallSlideJumpVelocityX,
+  getWallSlideSide,
+  getWallSlideVelocityY,
+  shouldWallSlide,
+  shouldWallSlideJump
+} from './gameplay/wallSlide'
 
 const TILE_SIZE = 40
 
@@ -205,6 +212,7 @@ class MainScene extends Phaser.Scene {
   private overlay?: Phaser.GameObjects.Rectangle
   private isComplete = false
   private isDripping = false
+  private isWallSliding = false
   private levelIndex = 0
   private idleTween?: Phaser.Tweens.Tween
   private spawnPoint = { x: TILE_SIZE / 2, y: TILE_SIZE / 2 }
@@ -245,6 +253,7 @@ class MainScene extends Phaser.Scene {
     this.wasOnGround = false
     this.justLanded = false
     this.isDripping = false
+    this.isWallSliding = false
     this.nextTrailAt = 0
 
     // Create a simple particle texture (only once)
@@ -297,6 +306,14 @@ class MainScene extends Phaser.Scene {
         frames: [{ key: 'player', frame: 3 }],
         frameRate: 3,
         repeat: 0
+      })
+    }
+
+    if (!this.anims.exists('wallSlide')) {
+      this.anims.create({
+        key: 'wallSlide',
+        frames: [{ key: 'player', frame: 2 }],
+        frameRate: 1
       })
     }
 
@@ -376,13 +393,29 @@ class MainScene extends Phaser.Scene {
     const body = this.player.body as Phaser.Physics.Arcade.Body
     const speed = 220
     const isOnGround = body.blocked.down
+    const touchingLeftWall = body.blocked.left
+    const touchingRightWall = body.blocked.right
 
     const leftDown = this.cursors.left?.isDown || this.keys.left.isDown
     const rightDown = this.cursors.right?.isDown || this.keys.right.isDown
     const isMoving = leftDown || rightDown
+    this.isWallSliding = shouldWallSlide(
+      isOnGround,
+      this.isDripping,
+      touchingLeftWall,
+      touchingRightWall,
+      !!leftDown,
+      !!rightDown
+    )
+    const wallSlideSide = getWallSlideSide(
+      touchingLeftWall,
+      touchingRightWall,
+      !!leftDown,
+      !!rightDown
+    )
 
     // Movement
-    if (!this.isDripping) {
+    if (!this.isDripping && !this.isWallSliding) {
       if (leftDown) {
         body.setVelocityX(-speed)
         this.player!.setFlipX(false)
@@ -392,9 +425,14 @@ class MainScene extends Phaser.Scene {
       } else {
         body.setVelocityX(0)
       }
-    } else {
+    } else if (this.isDripping) {
       body.setVelocityX(0)
       body.setVelocityY(720)
+    }
+
+    if (this.isWallSliding) {
+      body.setVelocityX(0)
+      body.setVelocityY(getWallSlideVelocityY(body.velocity.y))
     }
 
     // Jump
@@ -408,6 +446,15 @@ class MainScene extends Phaser.Scene {
       body.setVelocityY(getJumpVelocity())
       this.justLanded = false
       this.playJumpStretch()
+    }
+
+    if (shouldWallSlideJump(this.isWallSliding, wallSlideSide, !!jumpPressed, !!leftDown, !!rightDown) && wallSlideSide) {
+      this.stopIdleWobble()
+      body.setVelocityY(getJumpVelocity())
+      body.setVelocityX(getWallSlideJumpVelocityX(wallSlideSide))
+      this.justLanded = false
+      this.playJumpStretch()
+      this.isWallSliding = false
     }
 
     // Drip
@@ -481,7 +528,8 @@ class MainScene extends Phaser.Scene {
       isOnGround,
       isMoving,
       velocityY,
-      this.justLanded
+      this.justLanded,
+      this.isWallSliding
     )
 
     if (shouldChangeAnimation(currentAnimKey, nextKey)) {
@@ -573,6 +621,7 @@ class MainScene extends Phaser.Scene {
     this.levelIndex = index
     this.isComplete = false
     this.isDripping = false
+    this.isWallSliding = false
     this.wasOnGround = false
 
     this.exitZone?.destroy()
