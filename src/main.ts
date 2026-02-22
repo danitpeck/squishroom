@@ -18,14 +18,20 @@ import {
   shouldWallSlideJump,
   type WallSide
 } from './gameplay/wallSlide'
-import { loadScreenShakeEnabled, saveScreenShakeEnabled } from './gameplay/accessibility'
-import { playTone } from './gameplay/sfx'
+import {
+  loadAccessibilitySettings,
+  saveAccessibilitySettings,
+  type AccessibilitySettings
+} from './gameplay/accessibility'
+import { getSfxVolume, playTone, setSfxVolume } from './gameplay/sfx'
 import { applyPlayerBodyConfig } from './playerPhysics'
 import { getDeterministicDecals, getParallaxOffset } from './backgroundDepth'
 import {
+  getPaletteModeForAccessibility,
   getTileRenderStyle,
   resolveRenderPaletteMode,
   resolveRenderSkinMode,
+  type RenderPaletteMode,
   type TileRenderStyle
 } from './renderSkin'
 
@@ -147,7 +153,11 @@ class TitleScene extends Phaser.Scene {
 
   create() {
     const { width, height } = this.cameras.main
-    let screenShakeEnabled = loadScreenShakeEnabled(window.localStorage)
+    const queryPaletteMode = resolveRenderPaletteMode(window.location.search)
+    let accessibilitySettings = loadAccessibilitySettings(window.localStorage, {
+      highContrastEnabled: queryPaletteMode === 'high-contrast'
+    })
+    setSfxVolume(accessibilitySettings.sfxVolume)
 
     this.add
       .text(width / 2, height / 2 - 40, 'Squishroom', {
@@ -165,38 +175,69 @@ class TitleScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
 
-    const shakeText = this.add
-      .text(width / 2, height / 2 + 64, '', {
+    const settingsText = this.add
+      .text(width / 2, height / 2 + 88, '', {
         fontSize: '16px',
         color: '#9fb59a',
         fontFamily: 'Trebuchet MS, sans-serif'
       })
       .setOrigin(0.5)
 
-    const updateShakeText = () => {
-      shakeText.setText(`Screen Shake: ${screenShakeEnabled ? 'ON' : 'OFF'} (Press T)`) 
+    const persistSettings = () => {
+      accessibilitySettings = saveAccessibilitySettings(window.localStorage, accessibilitySettings)
+      setSfxVolume(accessibilitySettings.sfxVolume)
     }
-    updateShakeText()
+
+    const updateSettingsText = () => {
+      settingsText.setText(
+        [
+          `Screen Shake: ${accessibilitySettings.screenShakeEnabled ? 'ON' : 'OFF'} (T)`,
+          `Contrast: ${accessibilitySettings.highContrastEnabled ? 'HIGH' : 'NORMAL'} (C)`,
+          `SFX Volume: ${Math.round(accessibilitySettings.sfxVolume * 100)}% ([ / ])`
+        ].join('\n')
+      )
+    }
+    updateSettingsText()
 
     const space = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
     const enter = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER)
     const toggleShake = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.T)
+    const toggleContrast = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.C)
+    const volumeDown = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.OPEN_BRACKET)
+    const volumeUp = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.CLOSED_BRACKET)
+
+    const startMain = () => this.scene.start('main')
 
     toggleShake?.on('down', () => {
-      screenShakeEnabled = !screenShakeEnabled
-      saveScreenShakeEnabled(window.localStorage, screenShakeEnabled)
-      updateShakeText()
+      accessibilitySettings.screenShakeEnabled = !accessibilitySettings.screenShakeEnabled
+      persistSettings()
+      updateSettingsText()
       playTone(this.sound, { frequency: 650, durationMs: 80, volume: 0.025, type: 'triangle' })
     })
 
-    this.input.keyboard?.once('keydown', (event: KeyboardEvent) => {
-      if (event.code === 'Space' || event.code === 'Enter') {
-        this.scene.start('main')
-      }
+    toggleContrast?.on('down', () => {
+      accessibilitySettings.highContrastEnabled = !accessibilitySettings.highContrastEnabled
+      persistSettings()
+      updateSettingsText()
+      playTone(this.sound, { frequency: 560, durationMs: 80, volume: 0.025, type: 'triangle' })
     })
 
-    space?.once('down', () => this.scene.start('main'))
-    enter?.once('down', () => this.scene.start('main'))
+    volumeDown?.on('down', () => {
+      accessibilitySettings.sfxVolume = Math.max(0, accessibilitySettings.sfxVolume - 0.05)
+      persistSettings()
+      updateSettingsText()
+      playTone(this.sound, { frequency: 380, durationMs: 60, volume: 0.03, type: 'square' })
+    })
+
+    volumeUp?.on('down', () => {
+      accessibilitySettings.sfxVolume = Math.min(1, accessibilitySettings.sfxVolume + 0.05)
+      persistSettings()
+      updateSettingsText()
+      playTone(this.sound, { frequency: 720, durationMs: 60, volume: 0.03, type: 'square' })
+    })
+
+    space?.on('down', startMain)
+    enter?.on('down', startMain)
   }
 }
 
@@ -266,9 +307,27 @@ class MainScene extends Phaser.Scene {
   private trailEmitter?: Phaser.GameObjects.Particles.ParticleEmitter
   private nextTrailAt = 0
   private debugToggleKey?: Phaser.Input.Keyboard.Key
+  private settingsToggleKey?: Phaser.Input.Keyboard.Key
+  private settingsKeys?: {
+    toggleShake: Phaser.Input.Keyboard.Key
+    toggleContrast: Phaser.Input.Keyboard.Key
+    volumeDown: Phaser.Input.Keyboard.Key
+    volumeUp: Phaser.Input.Keyboard.Key
+  }
+  private settingsPanel?: Phaser.GameObjects.Container
+  private settingsText?: Phaser.GameObjects.Text
+  private settingsHintText?: Phaser.GameObjects.Text
+  private isSettingsOpen = false
+  private queryPaletteMode = resolveRenderPaletteMode(window.location.search)
+  private accessibilitySettings: AccessibilitySettings = loadAccessibilitySettings(window.localStorage, {
+    highContrastEnabled: this.queryPaletteMode === 'high-contrast'
+  })
   private screenShakeEnabled = true
   private renderSkinMode = resolveRenderSkinMode(window.location.search)
-  private renderPaletteMode = resolveRenderPaletteMode(window.location.search)
+  private renderPaletteMode: RenderPaletteMode = getPaletteModeForAccessibility(
+    this.accessibilitySettings.highContrastEnabled,
+    'normal'
+  )
   private decorativeLayerTiles: Phaser.GameObjects.Rectangle[] = []
   private backgroundFarLayer?: Phaser.GameObjects.Container
   private backgroundMidLayer?: Phaser.GameObjects.Container
@@ -297,7 +356,17 @@ class MainScene extends Phaser.Scene {
       down: Phaser.Input.Keyboard.KeyCodes.S
     }) as typeof this.keys
     this.debugToggleKey = keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.F1)
-    this.screenShakeEnabled = loadScreenShakeEnabled(window.localStorage)
+    this.settingsToggleKey = keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ESC)
+    this.settingsKeys = keyboard?.addKeys({
+      toggleShake: Phaser.Input.Keyboard.KeyCodes.T,
+      toggleContrast: Phaser.Input.Keyboard.KeyCodes.C,
+      volumeDown: Phaser.Input.Keyboard.KeyCodes.OPEN_BRACKET,
+      volumeUp: Phaser.Input.Keyboard.KeyCodes.CLOSED_BRACKET
+    }) as typeof this.settingsKeys
+    this.accessibilitySettings = loadAccessibilitySettings(window.localStorage, {
+      highContrastEnabled: this.queryPaletteMode === 'high-contrast'
+    })
+    this.applyAccessibilitySettings(false)
     this.setPhysicsDebugEnabled(false)
 
     // Reset player for fresh start
@@ -434,10 +503,21 @@ class MainScene extends Phaser.Scene {
       tint: [0xB58CFF, 0xA876FF, 0xC79EFF]
     })
 
+    this.createSettingsUi()
     this.loadLevel(0)
+    this.updateSettingsUiText()
   }
 
   update() {
+    if (this.settingsToggleKey && Phaser.Input.Keyboard.JustDown(this.settingsToggleKey)) {
+      this.setSettingsOpen(!this.isSettingsOpen)
+    }
+
+    if (this.isSettingsOpen) {
+      this.handleSettingsInput()
+      return
+    }
+
     if (this.debugToggleKey && Phaser.Input.Keyboard.JustDown(this.debugToggleKey)) {
       this.setPhysicsDebugEnabled(!this.physics.world.drawDebug)
     }
@@ -739,6 +819,173 @@ class MainScene extends Phaser.Scene {
     }
 
     this.cameras.main.shake(durationMs, intensity)
+  }
+
+  private createSettingsUi() {
+    const panelBackground = this.add
+      .rectangle(14, 14, 320, 128, 0x0b120c, 0.86)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, 0x9fb59a, 0.7)
+      .setScrollFactor(0)
+      .setDepth(40)
+
+    this.settingsText = this.add
+      .text(26, 26, '', {
+        fontSize: '14px',
+        color: '#d6e5ce',
+        fontFamily: 'Trebuchet MS, sans-serif',
+        lineSpacing: 5
+      })
+      .setScrollFactor(0)
+      .setDepth(41)
+
+    this.settingsPanel = this.add.container(0, 0, [panelBackground, this.settingsText])
+    this.settingsPanel.setVisible(false)
+    this.settingsPanel.setDepth(40)
+
+    this.settingsHintText = this.add
+      .text(16, 16, '', {
+        fontSize: '12px',
+        color: '#9fb59a',
+        fontFamily: 'Trebuchet MS, sans-serif'
+      })
+      .setScrollFactor(0)
+      .setDepth(42)
+  }
+
+  private updateSettingsUiText() {
+    if (!this.settingsText) {
+      return
+    }
+
+    this.settingsText.setText(
+      [
+        'Settings (ESC to close)',
+        `Screen Shake: ${this.accessibilitySettings.screenShakeEnabled ? 'ON' : 'OFF'} (T)`,
+        `Contrast: ${this.accessibilitySettings.highContrastEnabled ? 'HIGH' : 'NORMAL'} (C)`,
+        `SFX Volume: ${Math.round(getSfxVolume() * 100)}% ([ / ])`
+      ].join('\n')
+    )
+
+    if (this.settingsHintText) {
+      this.settingsHintText.setText(
+        this.isSettingsOpen
+          ? 'ESC Close Settings'
+          : 'ESC Settings | T Shake | C Contrast | [ / ] Volume'
+      )
+    }
+  }
+
+  private setSettingsOpen(isOpen: boolean) {
+    if (this.isSettingsOpen === isOpen) {
+      return
+    }
+
+    this.isSettingsOpen = isOpen
+    this.settingsPanel?.setVisible(isOpen)
+
+    if (isOpen) {
+      this.physics.world.pause()
+    } else {
+      this.physics.world.resume()
+    }
+
+    this.updateSettingsUiText()
+  }
+
+  private applyAccessibilitySettings(reloadLevelVisuals: boolean) {
+    const previousPalette = this.renderPaletteMode
+
+    this.screenShakeEnabled = this.accessibilitySettings.screenShakeEnabled
+    this.renderPaletteMode = getPaletteModeForAccessibility(this.accessibilitySettings.highContrastEnabled, 'normal')
+    setSfxVolume(this.accessibilitySettings.sfxVolume)
+
+    if (reloadLevelVisuals && this.renderPaletteMode !== previousPalette) {
+      this.reloadCurrentLevelVisuals()
+    }
+
+    this.updateSettingsUiText()
+  }
+
+  private persistAccessibilitySettings(reloadLevelVisuals: boolean) {
+    this.accessibilitySettings = saveAccessibilitySettings(window.localStorage, this.accessibilitySettings)
+    this.applyAccessibilitySettings(reloadLevelVisuals)
+  }
+
+  private reloadCurrentLevelVisuals() {
+    if (!this.player) {
+      this.loadLevel(this.levelIndex)
+      return
+    }
+
+    const body = this.player.body as Phaser.Physics.Arcade.Body
+    const previousState = {
+      x: this.player.x,
+      y: this.player.y,
+      velocityX: body.velocity.x,
+      velocityY: body.velocity.y,
+      flipX: this.player.flipX
+    }
+
+    this.loadLevel(this.levelIndex)
+
+    if (!this.player) {
+      return
+    }
+
+    const reloadedBody = this.player.body as Phaser.Physics.Arcade.Body
+    this.player.setPosition(
+      Phaser.Math.Clamp(previousState.x, TILE_SIZE / 2, this.currentLevelWidth - TILE_SIZE / 2),
+      Phaser.Math.Clamp(previousState.y, TILE_SIZE / 2, this.currentLevelHeight - TILE_SIZE / 2)
+    )
+    this.player.setFlipX(previousState.flipX)
+    reloadedBody.setVelocity(previousState.velocityX, previousState.velocityY)
+  }
+
+  private handleSettingsInput() {
+    if (!this.settingsKeys) {
+      return
+    }
+
+    let changed = false
+    let requiresVisualReload = false
+    let cueFrequency = 700
+
+    if (Phaser.Input.Keyboard.JustDown(this.settingsKeys.toggleShake)) {
+      this.accessibilitySettings.screenShakeEnabled = !this.accessibilitySettings.screenShakeEnabled
+      cueFrequency = 620
+      changed = true
+    }
+
+    if (Phaser.Input.Keyboard.JustDown(this.settingsKeys.toggleContrast)) {
+      this.accessibilitySettings.highContrastEnabled = !this.accessibilitySettings.highContrastEnabled
+      cueFrequency = 540
+      changed = true
+      requiresVisualReload = true
+    }
+
+    if (Phaser.Input.Keyboard.JustDown(this.settingsKeys.volumeDown)) {
+      this.accessibilitySettings.sfxVolume = Math.max(
+        0,
+        Math.round((this.accessibilitySettings.sfxVolume - 0.05) * 100) / 100
+      )
+      cueFrequency = 430
+      changed = true
+    }
+
+    if (Phaser.Input.Keyboard.JustDown(this.settingsKeys.volumeUp)) {
+      this.accessibilitySettings.sfxVolume = Math.min(
+        1,
+        Math.round((this.accessibilitySettings.sfxVolume + 0.05) * 100) / 100
+      )
+      cueFrequency = 760
+      changed = true
+    }
+
+    if (changed) {
+      this.persistAccessibilitySettings(requiresVisualReload)
+      playTone(this.sound, { frequency: cueFrequency, durationMs: 55, volume: 0.015, type: 'square' })
+    }
   }
 
   private createTileRect(x: number, y: number, baseWidth: number, baseHeight: number, style: TileRenderStyle) {

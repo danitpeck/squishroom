@@ -129,6 +129,13 @@ export function resolveRenderPaletteMode(search: string, fallback: RenderPalette
   return fallback
 }
 
+export function getPaletteModeForAccessibility(
+  highContrastEnabled: boolean,
+  fallback: RenderPaletteMode = 'normal'
+): RenderPaletteMode {
+  return highContrastEnabled ? 'high-contrast' : fallback
+}
+
 export function getTileRenderStyle(
   glyph: TileGlyph,
   mode: RenderSkinMode,

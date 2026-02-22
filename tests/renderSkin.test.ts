@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { getTileRenderStyle, resolveRenderPaletteMode, resolveRenderSkinMode } from '../src/renderSkin'
+import {
+  getPaletteModeForAccessibility,
+  getTileRenderStyle,
+  resolveRenderPaletteMode,
+  resolveRenderSkinMode
+} from '../src/renderSkin'
 
 describe('renderSkin', () => {
   it('uses skinned mode by default', () => {
@@ -17,6 +22,12 @@ describe('renderSkin', () => {
   it('supports high-contrast palette mode via query string', () => {
     expect(resolveRenderPaletteMode('?contrast=high')).toBe('high-contrast')
     expect(resolveRenderPaletteMode('?contrast=normal')).toBe('normal')
+  })
+
+  it('supports runtime palette override from accessibility settings', () => {
+    expect(getPaletteModeForAccessibility(true, 'normal')).toBe('high-contrast')
+    expect(getPaletteModeForAccessibility(false, 'high-contrast')).toBe('high-contrast')
+    expect(getPaletteModeForAccessibility(false, 'normal')).toBe('normal')
   })
 
   it('keeps classic and skinned dimensions aligned for gameplay safety', () => {

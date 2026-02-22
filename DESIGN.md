@@ -1,4 +1,4 @@
-﻿# Squishroom - Design Doc (v1.1)
+# Squishroom - Design Doc (v1.1)
 
 ## Elevator Pitch
 Squishroom is a tiny, single-screen platformer about guiding a squishy slime girl through tight rooms using tactile, playful movement. The joy comes from how she moves - stretching, squashing, and slipping through cracks.
@@ -44,12 +44,14 @@ Out of scope unless explicitly re-scoped:
 - Test coverage includes parser, gameplay-rule modules, and integration checks.
 - Render skin layer core is implemented (`src/renderSkin.ts`) with mode switching in `src/main.ts`.
 - Visual treatment for walls, thin platforms, hazards, and exit tiles is implemented with decorative edge accents.
+- Background/depth visuals (parallax + deterministic decals) are implemented as non-colliding presentation layers.
 - Juice hooks are implemented for particles, SFX, and accessibility-aware screen shake.
+- Accessibility settings surface is implemented in title/in-game flows with persisted shake, contrast, and SFX volume.
 
 ## Delivery Status
-- `Done`: baseline validation (tests/build), render-skin foundation, core tile visual pass, gameplay semantics preserved by parser/rule modules.
-- `In Progress`: readability/contrast verification workflow and final juice balancing targets.
-- `Next`: background/depth layer pass and post-visual content expansion/playtest documentation.
+- `Done`: baseline validation (tests/build), render-skin foundation, core tile visual pass, background/depth implementation, gameplay semantics preserved by parser/rule modules.
+- `In Progress`: room-by-room readability/contrast checklist, measurable juice mix calibration (shake/SFX thresholds), and settings UX clarity pass.
+- `Next`: content expansion and playtest documentation once polish closure criteria are met.
 
 ## Current Priority Theme
-Render Skin core is complete. Priority now shifts to depth/background pass, polish closure, and content follow-up while preserving ASCII semantics.
+Accessibility-first polish closure: finish options/persistence ergonomics and measurable readability/juice targets while preserving locked mechanics and ASCII level semantics.

@@ -1,11 +1,11 @@
-﻿# Execution Order - Render Skin Layer First
+# Execution Order - Render Skin Layer First
 
-This is the practical implementation order for the current cycle, now tracked with explicit progress status.
+This is the practical implementation order for the current cycle, tracked with explicit progress status and revalidation checkpoints.
 
 ## Progress Snapshot
 - Assessment date: February 22, 2026
-- Validation status: `npm run test` and `npm run build` are green.
-- Latest run result: `npm run test` -> 16 files passed, 203 tests passed.
+- Validation status: `npm run test` and `npm run build` were revalidated on February 22, 2026.
+- Latest run result: `npm run test` -> 17 files passed, 214 tests passed.
 - Latest run result: `npm run build` -> TypeScript + Vite build completed successfully.
 - Legend: `Done` = completed and validated, `In Progress` = functional but not finalized, `Next` = not yet implemented.
 
@@ -36,14 +36,21 @@ This is the practical implementation order for the current cycle, now tracked wi
 1. Add non-colliding background layers and simple parallax. (`Done`)
 2. Add room-safe decorative decals with deterministic placement. (`Done`)
 3. Keep visuals low-noise for gameplay clarity. (`In Progress`)
-- Remaining completion criteria: complete manual readability validation across all rooms and tune depth intensity if needed.
+- Remaining completion criteria: complete manual readability validation across all rooms and tune depth intensity bands if needed.
 
 ## Phase 4 - Juice Integration (1 day)
 - Status: `In Progress`
 1. Jump/land/drip/hazard particles are implemented.
 2. Camera shake accessibility toggle and persistence are implemented.
 3. SFX event hooks are implemented.
-- Remaining completion criteria: finalize balancing targets for intensity, cadence, and mix levels; add explicit tuning checklist.
+- Remaining completion criteria: finalize measurable balancing targets (shake intensity ranges, SFX cadence, and mix relationships).
+
+## Phase 4.5 - Accessibility Settings Surface (0.5-1 day)
+- Status: `In Progress`
+1. Settings model with persistence exists (`src/gameplay/accessibility.ts`).
+2. Title and in-game settings UI exist for shake, contrast, and SFX volume (`src/main.ts`).
+3. Runtime application is wired (screen shake, palette mode, and SFX gain).
+- Remaining completion criteria: finish UX copy/legibility pass and confirm settings behavior across full playthrough.
 
 ## Phase 5 - Content Follow-up (1-2 days)
 - Status: `Next`
@@ -57,4 +64,5 @@ This is the practical implementation order for the current cycle, now tracked wi
 - `npm run build`
 - Manual run through all existing rooms
 - Verify ASCII level files are unchanged in semantics
+- Verify readability in normal and high-contrast palettes
 - Update status docs after each phase checkpoint
