@@ -5,6 +5,9 @@
 
 export type WallSide = 'left' | 'right'
 
+const MAX_WALL_SLIDE_SPEED = 90
+const WALL_JUMP_LAUNCH_SPEED = 120
+
 /**
  * Determines whether wall slide should be active.
  */
@@ -51,13 +54,11 @@ export function getWallSlideSide(
  * Upward velocity is preserved.
  */
 export function getWallSlideVelocityY(currentVelocityY: number): number {
-  const maxSlideSpeed = 360
-
   if (currentVelocityY <= 0) {
     return currentVelocityY
   }
 
-  return Math.min(currentVelocityY, maxSlideSpeed)
+  return Math.min(currentVelocityY, MAX_WALL_SLIDE_SPEED)
 }
 
 /**
@@ -81,6 +82,5 @@ export function shouldWallSlideJump(
  * Horizontal launch velocity when jumping off a wall.
  */
 export function getWallSlideJumpVelocityX(wallSide: WallSide): number {
-  const launchSpeed = 180
-  return wallSide === 'left' ? launchSpeed : -launchSpeed
+  return wallSide === 'left' ? WALL_JUMP_LAUNCH_SPEED : -WALL_JUMP_LAUNCH_SPEED
 }
