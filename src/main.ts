@@ -10,6 +10,7 @@ import { shouldTriggerHazard, getHazardStateReset, getHazardVelocity, getHazardS
 import {
   getWallSlideContacts,
   getWallSlideJumpVelocityX,
+  getWallSlideLockVelocityX,
   getWallSlideSide,
   getWallSlideVelocityY,
   shouldWallSlide,
@@ -457,7 +458,7 @@ class MainScene extends Phaser.Scene {
       !!leftDown,
       !!rightDown
     )
-    const wallSlideLockVelocityX = wallSlideSide === 'left' ? -20 : wallSlideSide === 'right' ? 20 : 0
+    const wallSlideLockVelocityX = getWallSlideLockVelocityX()
 
     // Movement
     if (!this.isDripping && !this.isWallSliding) {
@@ -740,8 +741,8 @@ class MainScene extends Phaser.Scene {
 
     this.spawnPoint = { x: levelData.spawn.x, y: levelData.spawn.y }
 
-    levelData.walls.forEach(({ x, y }) => {
-      const wall = this.add.rectangle(x, y, TILE_SIZE, TILE_SIZE, 0x3f5d3a)
+    levelData.wallSegments.forEach(({ x, y, width, height }) => {
+      const wall = this.add.rectangle(x, y, width, height, 0x3f5d3a)
       this.physics.add.existing(wall, true)
       this.walls!.add(wall)
     })

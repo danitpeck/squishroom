@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   getWallSlideContacts,
   getWallSlideJumpVelocityX,
+  getWallSlideLockVelocityX,
   getWallSlideSide,
   getWallSlideVelocityY,
   shouldWallSlide,
@@ -38,6 +39,10 @@ describe('wallSlide gameplay rules', () => {
     expect(getWallSlideSide(true, false, true, false)).toBe('left')
     expect(getWallSlideSide(false, true, false, true)).toBe('right')
     expect(getWallSlideSide(true, false, false, false)).toBeUndefined()
+  })
+
+  it('uses neutral horizontal lock velocity while wall sliding', () => {
+    expect(getWallSlideLockVelocityX()).toBe(0)
   })
 
   it('clamps downward velocity but preserves upward velocity', () => {
