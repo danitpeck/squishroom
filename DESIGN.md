@@ -1,4 +1,4 @@
-# Squishroom — Mini Design Doc (v0)
+# Squishroom — Design Doc (v1.1)
 
 ## Elevator Pitch
 Squishroom is a tiny, single-screen platformer about guiding a squishy slime girl through tight rooms using tactile, playful movement. The joy comes from how she moves -- stretching, squashing, and slipping through cracks -- not from combat or complex systems.
