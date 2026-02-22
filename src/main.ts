@@ -7,6 +7,15 @@ import { shouldEmitTrail, getNextTrailTime, getTrailOffsetX, getTrailJitterX, ge
 import { getNextAnimationKey, shouldChangeAnimation } from './gameplay/animationState'
 import { shouldStartDrip, getDripVelocity, getDripVelocityX, shouldEndDrip } from './gameplay/dripInput'
 import { shouldTriggerHazard, getHazardStateReset, getHazardVelocity, getHazardSplatScale } from './gameplay/hazardInteraction'
+import {
+  getWallSlideJumpVelocityX,
+  getWallSlideSide,
+  getWallSlideVelocityY,
+  shouldWallSlide,
+  shouldWallSlideJump
+} from './gameplay/wallSlide'
+import { loadScreenShakeEnabled, saveScreenShakeEnabled } from './gameplay/accessibility'
+import { playTone } from './gameplay/sfx'
 
 const TILE_SIZE = 40
 
@@ -122,6 +131,7 @@ class TitleScene extends Phaser.Scene {
 
   create() {
     const { width, height } = this.cameras.main
+    let screenShakeEnabled = loadScreenShakeEnabled(window.localStorage)
 
     this.add
       .text(width / 2, height / 2 - 40, 'Squishroom', {
@@ -139,8 +149,29 @@ class TitleScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
 
+    const shakeText = this.add
+      .text(width / 2, height / 2 + 64, '', {
+        fontSize: '16px',
+        color: '#9fb59a',
+        fontFamily: 'Trebuchet MS, sans-serif'
+      })
+      .setOrigin(0.5)
+
+    const updateShakeText = () => {
+      shakeText.setText(`Screen Shake: ${screenShakeEnabled ? 'ON' : 'OFF'} (Press T)`) 
+    }
+    updateShakeText()
+
     const space = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
     const enter = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER)
+    const toggleShake = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.T)
+
+    toggleShake?.on('down', () => {
+      screenShakeEnabled = !screenShakeEnabled
+      saveScreenShakeEnabled(window.localStorage, screenShakeEnabled)
+      updateShakeText()
+      playTone(this.sound, { frequency: 650, durationMs: 80, volume: 0.025, type: 'triangle' })
+    })
 
     this.input.keyboard?.once('keydown', (event: KeyboardEvent) => {
       if (event.code === 'Space' || event.code === 'Enter') {
@@ -205,6 +236,7 @@ class MainScene extends Phaser.Scene {
   private overlay?: Phaser.GameObjects.Rectangle
   private isComplete = false
   private isDripping = false
+  private isWallSliding = false
   private levelIndex = 0
   private idleTween?: Phaser.Tweens.Tween
   private spawnPoint = { x: TILE_SIZE / 2, y: TILE_SIZE / 2 }
@@ -215,6 +247,7 @@ class MainScene extends Phaser.Scene {
   private trailEmitter?: Phaser.GameObjects.Particles.ParticleEmitter
   private nextTrailAt = 0
   private debugToggleKey?: Phaser.Input.Keyboard.Key
+  private screenShakeEnabled = true
 
   constructor() {
     super('main')
@@ -237,6 +270,7 @@ class MainScene extends Phaser.Scene {
       down: Phaser.Input.Keyboard.KeyCodes.S
     }) as typeof this.keys
     this.debugToggleKey = keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.F1)
+    this.screenShakeEnabled = loadScreenShakeEnabled(window.localStorage)
     this.setPhysicsDebugEnabled(false)
 
     // Reset player for fresh start
@@ -245,6 +279,7 @@ class MainScene extends Phaser.Scene {
     this.wasOnGround = false
     this.justLanded = false
     this.isDripping = false
+    this.isWallSliding = false
     this.nextTrailAt = 0
 
     // Create a simple particle texture (only once)
@@ -297,6 +332,14 @@ class MainScene extends Phaser.Scene {
         frames: [{ key: 'player', frame: 3 }],
         frameRate: 3,
         repeat: 0
+      })
+    }
+
+    if (!this.anims.exists('wallSlide')) {
+      this.anims.create({
+        key: 'wallSlide',
+        frames: [{ key: 'player', frame: 2 }],
+        frameRate: 1
       })
     }
 
@@ -376,13 +419,30 @@ class MainScene extends Phaser.Scene {
     const body = this.player.body as Phaser.Physics.Arcade.Body
     const speed = 220
     const isOnGround = body.blocked.down
+    const touchingLeftWall = body.blocked.left || body.touching.left
+    const touchingRightWall = body.blocked.right || body.touching.right
 
     const leftDown = this.cursors.left?.isDown || this.keys.left.isDown
     const rightDown = this.cursors.right?.isDown || this.keys.right.isDown
     const isMoving = leftDown || rightDown
+    this.isWallSliding = shouldWallSlide(
+      isOnGround,
+      this.isDripping,
+      touchingLeftWall,
+      touchingRightWall,
+      !!leftDown,
+      !!rightDown
+    )
+    const wallSlideSide = getWallSlideSide(
+      touchingLeftWall,
+      touchingRightWall,
+      !!leftDown,
+      !!rightDown
+    )
+    const wallSlideLockVelocityX = wallSlideSide === 'left' ? -20 : wallSlideSide === 'right' ? 20 : 0
 
     // Movement
-    if (!this.isDripping) {
+    if (!this.isDripping && !this.isWallSliding) {
       if (leftDown) {
         body.setVelocityX(-speed)
         this.player!.setFlipX(false)
@@ -392,9 +452,14 @@ class MainScene extends Phaser.Scene {
       } else {
         body.setVelocityX(0)
       }
-    } else {
+    } else if (this.isDripping) {
       body.setVelocityX(0)
       body.setVelocityY(720)
+    }
+
+    if (this.isWallSliding) {
+      body.setVelocityX(wallSlideLockVelocityX)
+      body.setVelocityY(getWallSlideVelocityY(body.velocity.y))
     }
 
     // Jump
@@ -410,6 +475,15 @@ class MainScene extends Phaser.Scene {
       this.playJumpStretch()
     }
 
+    if (shouldWallSlideJump(this.isWallSliding, wallSlideSide, !!jumpPressed, !!leftDown, !!rightDown) && wallSlideSide) {
+      this.stopIdleWobble()
+      body.setVelocityY(getJumpVelocity())
+      body.setVelocityX(getWallSlideJumpVelocityX(wallSlideSide))
+      this.justLanded = false
+      this.playJumpStretch()
+      this.isWallSliding = false
+    }
+
     // Drip
     const dripPressed =
       (this.cursors.down && Phaser.Input.Keyboard.JustDown(this.cursors.down)) ||
@@ -420,6 +494,7 @@ class MainScene extends Phaser.Scene {
       this.isDrippingParticles = true
       body.setVelocityX(getDripVelocityX())
       body.setVelocityY(getDripVelocity())
+      playTone(this.sound, { frequency: 420, frequencyEnd: 180, durationMs: 120, volume: 0.03, type: 'triangle' })
     }
 
     const jumpReleased =
@@ -481,7 +556,8 @@ class MainScene extends Phaser.Scene {
       isOnGround,
       isMoving,
       velocityY,
-      this.justLanded
+      this.justLanded,
+      this.isWallSliding
     )
 
     if (shouldChangeAnimation(currentAnimKey, nextKey)) {
@@ -512,6 +588,8 @@ class MainScene extends Phaser.Scene {
     }
 
     this.isComplete = true
+    playTone(this.sound, { frequency: 520, frequencyEnd: 780, durationMs: 260, volume: 0.035, type: 'sine' })
+    this.triggerScreenShake(0.004, 200)
     this.scene.start('win')
   }
 
@@ -524,6 +602,8 @@ class MainScene extends Phaser.Scene {
     if (this.spikeEmitter) {
       this.spikeEmitter.emitParticleAt(this.player!.x, this.player!.y, 12)
     }
+    playTone(this.sound, { frequency: 180, frequencyEnd: 90, durationMs: 140, volume: 0.045, type: 'sawtooth' })
+    this.triggerScreenShake(0.012, 130)
 
     // Apply hazard state reset
     const reset = getHazardStateReset()
@@ -551,6 +631,7 @@ class MainScene extends Phaser.Scene {
     if (this.jumpEmitter) {
       this.jumpEmitter.emitParticleAt(this.player.x, this.player.y + 17, 6)
     }
+    playTone(this.sound, { frequency: 460, frequencyEnd: 580, durationMs: 90, volume: 0.025, type: 'square' })
   }
 
   private playLandSquash() {
@@ -563,6 +644,16 @@ class MainScene extends Phaser.Scene {
     if (this.landEmitter) {
       this.landEmitter.emitParticleAt(this.player.x, this.player.y + 17, 12)
     }
+    playTone(this.sound, { frequency: 190, frequencyEnd: 140, durationMs: 80, volume: 0.03, type: 'triangle' })
+    this.triggerScreenShake(0.004, 80)
+  }
+
+  private triggerScreenShake(intensity: number, durationMs: number) {
+    if (!this.screenShakeEnabled) {
+      return
+    }
+
+    this.cameras.main.shake(durationMs, intensity)
   }
 
   private loadLevel(index: number) {
@@ -573,6 +664,7 @@ class MainScene extends Phaser.Scene {
     this.levelIndex = index
     this.isComplete = false
     this.isDripping = false
+    this.isWallSliding = false
     this.wasOnGround = false
 
     this.exitZone?.destroy()
