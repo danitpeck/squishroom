@@ -51,3 +51,11 @@ Use this schema for every entry:
 - Verification Gate: Open changed docs and scan for malformed characters prior to finalizing.
 - Applied To: `DEVELOPMENT.md`, markdown cleanup workflow.
 - Status: active
+
+## 2026-02-23 - Use Type-Only Phaser Imports in Tested Helper Modules
+- Trigger: A refactor introduced a runtime `phaser` import in a helper module and Vitest failed with `navigator is not defined`.
+- Missed Signal: Importing Phaser as a runtime dependency in non-scene helpers can pull browser-only device initialization into node test runs.
+- New Rule: In pure/helper modules, use `import type Phaser` when only types are needed; reserve runtime Phaser imports for scene/runtime modules.
+- Verification Gate: `npm run test` must complete without `navigator is not defined` or Phaser device bootstrap errors.
+- Applied To: `src/scenes/main/settingsController.ts`, `tests/scenes/main/settingsController.test.ts`.
+- Status: active
