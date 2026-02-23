@@ -1,5 +1,6 @@
 import './style.css'
 import Phaser from 'phaser'
+import { CAMPAIGNS, type CampaignId, type RoomDefinition } from './content/rooms'
 import { parseLevel } from './level'
 import { shouldThinPlatformCollide } from './gameplay/thinPlatform'
 import { shouldJump, getJumpVelocity, shouldCutJump, getCutJumpVelocity } from './gameplay/jumpInput'
@@ -7,6 +8,8 @@ import { shouldEmitTrail, getNextTrailTime, getTrailOffsetX, getTrailJitterX, ge
 import { getNextAnimationKey, shouldChangeAnimation } from './gameplay/animationState'
 import { shouldStartDrip, getDripVelocity, getDripVelocityX, shouldEndDrip } from './gameplay/dripInput'
 import { shouldTriggerHazard, getHazardStateReset, getHazardVelocity, getHazardSplatScale } from './gameplay/hazardInteraction'
+import { compareRunForRanking, getMedalForTime, type MedalTier } from './gameplay/medals'
+import { loadStats, saveRoomResult } from './gameplay/runStats'
 import {
   getWallSlideContacts,
   getWallSlideJumpVelocityX,
@@ -41,110 +44,43 @@ const BASE_TILE_SIZE = 40
 const WORLD_SCALE = PLAYER_SCALE / BASE_PLAYER_SCALE
 const TILE_SIZE = Math.round(BASE_TILE_SIZE * WORLD_SCALE)
 
-const LEVELS = [
-  [
-    '####################',
-    '#..S...............#',
-    '#..#######.........#',
-    '#........#.........#',
-    '#........#.....E...#',
-    '#........#..####...#',
-    '#........#.........#',
-    '#........#.........#',
-    '#...###..#####.....#',
-    '#...#....#.........#',
-    '#...#....#.........#',
-    '#...#....#.........#',
-    '#...#....#.........#',
-    '#...######.........#',
-    '####################'
-  ],
-  [
-    '####################',
-    '#..S...............#',
-    '#..................#',
-    '#..................#',
-    '#..................#',
-    '#~~~~~~~~~~~~~~~~~~#',
-    '#..................#',
-    '#..................#',
-    '#..............E...#',
-    '#..................#',
-    '#........####......#',
-    '#..................#',
-    '#.............##...#',
-    '#..................#',
-    '####################'
-  ],
-  [
-    '####################',
-    '#..S...............#',
-    '#..................#',
-    '#..................#',
-    '#..................#',
-    '#..................#',
-    '#..................#',
-    '#..................#',
-    '#.........#....E...#',
-    '#..................#',
-    '#.....##.....##....#',
-    '#....#..^^^^^......#',
-    '#...#...#####......#',
-    '#..................#',
-    '####################'
-  ],
-  [
-    '####################',
-    '#..S...............#',
-    '#..................#',
-    '#..................#',
-    '#..................#',
-    '#~~~~~~#############',
-    '#..................#',
-    '#..................#',
-    '#..............E...#',
-    '#..................#',
-    '#.....##########...#',
-    '#..................#',
-    '#..................#',
-    '#^^^^^^^^^^^^^^^^^^#',
-    '####################'
-  ],
-  [
-    '####################',
-    '#..S.#.............#',
-    '#....#.............#',
-    '#....#.............#',
-    '#....#.............#',
-    '#..................#',
-    '#..................#',
-    '#..................#',
-    '#.........##...E...#',
-    '#.......##.........#',
-    '#.....##...........#',
-    '#^^^^^.............#',
-    '######.............#',
-    '#..................#',
-    '####################'
-  ],
-  [
-    '####################',
-    '#..S...............#',
-    '#..................#',
-    '#..................#',
-    '#..................#',
-    '#~~~~~~~~~~~~~~~~~~#',
-    '#..^^^^^^^^^^^^^^^^#',
-    '#..#################',
-    '#..#############.E.#',
-    '#~~#############...#',
-    '#..................#',
-    '###~~~~~~~~~~~~~~~~#',
-    '#..................#',
-    '#^^^^^^######^^^^^^#',
-    '####################'
-  ]
+type TitleMode = 'core' | 'mastery' | 'stats'
+
+type MainSceneData = {
+  campaignId?: CampaignId
+  roomIndex?: number
+}
+
+type ClearPanelResult = {
+  roomName: string
+  clearMs: number
+  deaths: number
+  medal: MedalTier
+  isNewPb: boolean
+  chapterComplete: boolean
+  packComplete: boolean
+}
+
+const TITLE_MODE_OPTIONS: { id: TitleMode; label: string; description: string }[] = [
+  { id: 'core', label: 'Core Run', description: 'Original campaign' },
+  { id: 'mastery', label: 'Mastery Pack', description: 'v1.3 ladder rooms' },
+  { id: 'stats', label: 'Stats', description: 'Best times and medals' }
 ]
+
+function formatDurationMs(ms: number): string {
+  const safeMs = Math.max(0, Math.floor(ms))
+  const minutes = Math.floor(safeMs / 60_000)
+  const seconds = Math.floor((safeMs % 60_000) / 1000)
+  const centiseconds = Math.floor((safeMs % 1000) / 10)
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(centiseconds).padStart(2, '0')}`
+}
+
+function getMedalLabel(medal: MedalTier): string {
+  if (medal === 'gold') return 'Gold'
+  if (medal === 'silver') return 'Silver'
+  if (medal === 'bronze') return 'Bronze'
+  return 'None'
+}
 
 class TitleScene extends Phaser.Scene {
   constructor() {
@@ -168,16 +104,25 @@ class TitleScene extends Phaser.Scene {
       .setOrigin(0.5)
 
     this.add
-      .text(width / 2, height / 2 + 30, 'Press Space or Enter', {
+      .text(width / 2, height / 2 + 8, 'Left/Right to choose mode | Space/Enter to confirm', {
         fontSize: '20px',
         color: '#cbd7c0',
         fontFamily: 'Trebuchet MS, sans-serif'
       })
       .setOrigin(0.5)
 
+    let modeIndex = 0
+    const modeText = this.add
+      .text(width / 2, height / 2 + 44, '', {
+        fontSize: '20px',
+        color: '#dbe8d5',
+        fontFamily: 'Trebuchet MS, sans-serif'
+      })
+      .setOrigin(0.5)
+
     const settingsText = this.add
-      .text(width / 2, height / 2 + 88, '', {
-        fontSize: '16px',
+      .text(width / 2, height / 2 + 132, '', {
+        fontSize: '15px',
         color: '#9fb59a',
         fontFamily: 'Trebuchet MS, sans-serif'
       })
@@ -186,6 +131,11 @@ class TitleScene extends Phaser.Scene {
     const persistSettings = () => {
       accessibilitySettings = saveAccessibilitySettings(window.localStorage, accessibilitySettings)
       setSfxVolume(accessibilitySettings.sfxVolume)
+    }
+
+    const updateModeText = () => {
+      const mode = TITLE_MODE_OPTIONS[modeIndex]
+      modeText.setText(`Mode: ${mode.label} (${mode.description})`)
     }
 
     const updateSettingsText = () => {
@@ -197,16 +147,34 @@ class TitleScene extends Phaser.Scene {
         ].join('\n')
       )
     }
+    updateModeText()
     updateSettingsText()
 
     const space = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
     const enter = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER)
+    const left = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.LEFT)
+    const right = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT)
     const toggleShake = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.T)
     const toggleContrast = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.C)
     const volumeDown = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.OPEN_BRACKET)
     const volumeUp = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.CLOSED_BRACKET)
 
-    const startMain = () => this.scene.start('main')
+    const cycleMode = (delta: number) => {
+      modeIndex = (modeIndex + delta + TITLE_MODE_OPTIONS.length) % TITLE_MODE_OPTIONS.length
+      updateModeText()
+      playTone(this.sound, { frequency: 510, durationMs: 50, volume: 0.018, type: 'triangle' })
+    }
+
+    const confirmMode = () => {
+      const selected = TITLE_MODE_OPTIONS[modeIndex]
+      if (selected.id === 'stats') {
+        this.scene.start('stats')
+        return
+      }
+
+      const campaignId: CampaignId = selected.id === 'mastery' ? 'mastery_v13' : 'core'
+      this.scene.start('main', { campaignId, roomIndex: 0 } satisfies MainSceneData)
+    }
 
     toggleShake?.on('down', () => {
       accessibilitySettings.screenShakeEnabled = !accessibilitySettings.screenShakeEnabled
@@ -236,8 +204,109 @@ class TitleScene extends Phaser.Scene {
       playTone(this.sound, { frequency: 720, durationMs: 60, volume: 0.03, type: 'square' })
     })
 
-    space?.on('down', startMain)
-    enter?.on('down', startMain)
+    left?.on('down', () => cycleMode(-1))
+    right?.on('down', () => cycleMode(1))
+    space?.on('down', confirmMode)
+    enter?.on('down', confirmMode)
+  }
+}
+
+class StatsScene extends Phaser.Scene {
+  constructor() {
+    super('stats')
+  }
+
+  create() {
+    const { width } = this.cameras.main
+    const stats = loadStats(window.localStorage)
+    const masteryStats = stats.campaigns.mastery_v13
+    const masteryRooms = CAMPAIGNS.mastery_v13
+    const medalTotals = { bronze: 0, silver: 0, gold: 0 }
+    const chapterProgress: Record<number, { cleared: number; total: number }> = {
+      1: { cleared: 0, total: 0 },
+      2: { cleared: 0, total: 0 },
+      3: { cleared: 0, total: 0 }
+    }
+
+    const roomLines = masteryRooms.map((room) => {
+      const best = masteryStats.rooms[room.id]
+      if (chapterProgress[room.chapter]) {
+        chapterProgress[room.chapter].total += 1
+        if (best) {
+          chapterProgress[room.chapter].cleared += 1
+        }
+      }
+
+      if (best?.bestMedal === 'bronze') medalTotals.bronze += 1
+      if (best?.bestMedal === 'silver') medalTotals.silver += 1
+      if (best?.bestMedal === 'gold') medalTotals.gold += 1
+
+      const bestTime = best ? formatDurationMs(best.bestMs) : '--:--.--'
+      const deaths = best ? String(best.fewestDeaths) : '--'
+      const medal = best ? getMedalLabel(best.bestMedal) : 'None'
+      return `${room.id.padEnd(6)} ${bestTime}  deaths:${deaths.padStart(2, ' ')}  medal:${medal}`
+    })
+
+    this.add
+      .text(width / 2, 36, 'Mastery Pack Stats', {
+        fontSize: '34px',
+        color: '#f4f2e6',
+        fontFamily: 'Trebuchet MS, sans-serif'
+      })
+      .setOrigin(0.5)
+
+    this.add
+      .text(
+        24,
+        78,
+        [
+          `Chapter 1: ${chapterProgress[1].cleared}/${chapterProgress[1].total}`,
+          `Chapter 2: ${chapterProgress[2].cleared}/${chapterProgress[2].total}`,
+          `Chapter 3: ${chapterProgress[3].cleared}/${chapterProgress[3].total}`,
+          `Medals -> Bronze: ${medalTotals.bronze}, Silver: ${medalTotals.silver}, Gold: ${medalTotals.gold}`
+        ].join('\n'),
+        {
+          fontSize: '16px',
+          color: '#cfdcc8',
+          fontFamily: 'Trebuchet MS, sans-serif',
+          lineSpacing: 4
+        }
+      )
+
+    this.add.text(24, 172, roomLines.join('\n'), {
+      fontSize: '14px',
+      color: '#b7cbb0',
+      fontFamily: 'Consolas, monospace',
+      lineSpacing: 3
+    })
+
+    this.add
+      .text(width / 2, 576, 'Press B, ESC, Space, or Enter to return', {
+        fontSize: '16px',
+        color: '#9fb59a',
+        fontFamily: 'Trebuchet MS, sans-serif'
+      })
+      .setOrigin(0.5)
+
+    const backKeys = this.input.keyboard?.addKeys({
+      back: Phaser.Input.Keyboard.KeyCodes.B,
+      esc: Phaser.Input.Keyboard.KeyCodes.ESC,
+      space: Phaser.Input.Keyboard.KeyCodes.SPACE,
+      enter: Phaser.Input.Keyboard.KeyCodes.ENTER
+    }) as
+      | {
+          back: Phaser.Input.Keyboard.Key
+          esc: Phaser.Input.Keyboard.Key
+          space: Phaser.Input.Keyboard.Key
+          enter: Phaser.Input.Keyboard.Key
+        }
+      | undefined
+
+    const goBack = () => this.scene.start('title')
+    backKeys?.back.on('down', goBack)
+    backKeys?.esc.on('down', goBack)
+    backKeys?.space.on('down', goBack)
+    backKeys?.enter.on('down', goBack)
   }
 }
 
@@ -297,7 +366,23 @@ class MainScene extends Phaser.Scene {
   private lastWallContactAt = Number.NEGATIVE_INFINITY
   private lastWallSide: WallSide | undefined
   private lastAirborneFallSpeed = 0
+  private campaignId: CampaignId = 'core'
+  private rooms: RoomDefinition[] = CAMPAIGNS.core
   private levelIndex = 0
+  private levelClearPanelVisible = false
+  private levelClearHasNext = false
+  private attemptStartedAt = 0
+  private attemptDeaths = 0
+  private attemptHudText?: Phaser.GameObjects.Text
+  private clearPanel?: Phaser.GameObjects.Container
+  private clearPanelText?: Phaser.GameObjects.Text
+  private clearActionKeys?: {
+    next: Phaser.Input.Keyboard.Key
+    retry: Phaser.Input.Keyboard.Key
+    back: Phaser.Input.Keyboard.Key
+    enter: Phaser.Input.Keyboard.Key
+    space: Phaser.Input.Keyboard.Key
+  }
   private idleTween?: Phaser.Tweens.Tween
   private spawnPoint = { x: TILE_SIZE / 2, y: TILE_SIZE / 2 }
   private jumpEmitter?: Phaser.GameObjects.Particles.ParticleEmitter
@@ -339,6 +424,13 @@ class MainScene extends Phaser.Scene {
     super('main')
   }
 
+  init(data: MainSceneData) {
+    const requestedCampaign = data.campaignId ?? 'core'
+    this.campaignId = requestedCampaign
+    this.rooms = CAMPAIGNS[requestedCampaign]
+    this.levelIndex = Phaser.Math.Clamp(data.roomIndex ?? 0, 0, Math.max(0, this.rooms.length - 1))
+  }
+
   preload() {
     this.load.spritesheet('player', './assets/player.png', {
       frameWidth: 32,
@@ -363,6 +455,13 @@ class MainScene extends Phaser.Scene {
       volumeDown: Phaser.Input.Keyboard.KeyCodes.OPEN_BRACKET,
       volumeUp: Phaser.Input.Keyboard.KeyCodes.CLOSED_BRACKET
     }) as typeof this.settingsKeys
+    this.clearActionKeys = keyboard?.addKeys({
+      next: Phaser.Input.Keyboard.KeyCodes.N,
+      retry: Phaser.Input.Keyboard.KeyCodes.R,
+      back: Phaser.Input.Keyboard.KeyCodes.B,
+      enter: Phaser.Input.Keyboard.KeyCodes.ENTER,
+      space: Phaser.Input.Keyboard.KeyCodes.SPACE
+    }) as typeof this.clearActionKeys
     this.accessibilitySettings = loadAccessibilitySettings(window.localStorage, {
       highContrastEnabled: this.queryPaletteMode === 'high-contrast'
     })
@@ -380,6 +479,9 @@ class MainScene extends Phaser.Scene {
     this.lastWallSide = undefined
     this.lastAirborneFallSpeed = 0
     this.nextTrailAt = 0
+    this.attemptStartedAt = this.time.now
+    this.attemptDeaths = 0
+    this.levelClearPanelVisible = false
 
     // Create a simple particle texture (only once)
     if (!this.textures.exists('particle')) {
@@ -503,12 +605,20 @@ class MainScene extends Phaser.Scene {
       tint: [0xB58CFF, 0xA876FF, 0xC79EFF]
     })
 
+    this.createAttemptHud()
+    this.createClearPanel()
     this.createSettingsUi()
-    this.loadLevel(0)
+    this.loadLevel(this.levelIndex, { resetAttempt: true })
     this.updateSettingsUiText()
+    this.updateAttemptHud()
   }
 
   update() {
+    if (this.levelClearPanelVisible) {
+      this.handleClearPanelInput()
+      return
+    }
+
     if (this.settingsToggleKey && Phaser.Input.Keyboard.JustDown(this.settingsToggleKey)) {
       this.setSettingsOpen(!this.isSettingsOpen)
     }
@@ -524,6 +634,10 @@ class MainScene extends Phaser.Scene {
 
     if (this.player) {
       this.updateBackgroundParallax()
+    }
+
+    if (this.isMasteryCampaign()) {
+      this.updateAttemptHud()
     }
 
     if (!this.player || !this.cursors || !this.keys || this.isComplete) {
@@ -736,14 +850,51 @@ class MainScene extends Phaser.Scene {
       return
     }
 
-    if (this.levelIndex < LEVELS.length - 1) {
-      this.loadLevel(this.levelIndex + 1)
+    if (!this.isMasteryCampaign()) {
+      if (this.levelIndex < this.rooms.length - 1) {
+        this.loadLevel(this.levelIndex + 1, { resetAttempt: true })
+        return
+      }
+
+      this.isComplete = true
+      playTone(this.sound, { frequency: 520, frequencyEnd: 780, durationMs: 260, volume: 0.035, type: 'sine' })
+      this.scene.start('win')
       return
     }
 
-    this.isComplete = true
-    playTone(this.sound, { frequency: 520, frequencyEnd: 780, durationMs: 260, volume: 0.035, type: 'sine' })
-    this.scene.start('win')
+    const room = this.getCurrentRoom()
+    const clearMs = Math.max(1, Math.floor(this.time.now - this.attemptStartedAt))
+    const deaths = this.attemptDeaths
+    const medal = room.medalTargets ? getMedalForTime(clearMs, room.medalTargets) : 'none'
+    const statsBefore = loadStats(window.localStorage)
+    const existing = statsBefore.campaigns[this.campaignId].rooms[room.id]
+    const isNewPb =
+      !existing ||
+      compareRunForRanking(
+        { clearMs, deaths },
+        { clearMs: existing.bestMs, deaths: existing.fewestDeaths }
+      ) < 0
+    const updated = saveRoomResult(window.localStorage, this.campaignId, room.id, {
+      clearMs,
+      deaths,
+      medal
+    })
+    const chapterRooms = this.rooms.filter((candidate) => candidate.chapter === room.chapter)
+    const chapterComplete = chapterRooms.every(
+      (candidate) => (updated.campaigns[this.campaignId].rooms[candidate.id]?.clears ?? 0) > 0
+    )
+    const packComplete = this.levelIndex >= this.rooms.length - 1
+
+    playTone(this.sound, { frequency: 620, frequencyEnd: 840, durationMs: 210, volume: 0.03, type: 'sine' })
+    this.openClearPanel({
+      roomName: room.name,
+      clearMs,
+      deaths,
+      medal,
+      isNewPb,
+      chapterComplete,
+      packComplete
+    })
   }
 
   private handleHazard() {
@@ -771,6 +922,12 @@ class MainScene extends Phaser.Scene {
 
     this.player!.setPosition(this.spawnPoint.x, this.spawnPoint.y)
     this.player!.play('idle')
+
+    if (this.isMasteryCampaign()) {
+      this.attemptDeaths += 1
+      this.attemptStartedAt = this.time.now
+      this.updateAttemptHud()
+    }
   }
 
   private playJumpStretch() {
@@ -914,7 +1071,7 @@ class MainScene extends Phaser.Scene {
 
   private reloadCurrentLevelVisuals() {
     if (!this.player) {
-      this.loadLevel(this.levelIndex)
+      this.loadLevel(this.levelIndex, { preserveAttemptState: true, resetAttempt: false })
       return
     }
 
@@ -927,7 +1084,7 @@ class MainScene extends Phaser.Scene {
       flipX: this.player.flipX
     }
 
-    this.loadLevel(this.levelIndex)
+    this.loadLevel(this.levelIndex, { preserveAttemptState: true, resetAttempt: false })
 
     if (!this.player) {
       return
@@ -988,6 +1145,158 @@ class MainScene extends Phaser.Scene {
     }
   }
 
+  private isMasteryCampaign(): boolean {
+    return this.campaignId === 'mastery_v13'
+  }
+
+  private getCurrentRoom(): RoomDefinition {
+    return this.rooms[this.levelIndex]
+  }
+
+  private updateAttemptStateForLevelLoad(options: { preserveAttemptState?: boolean; resetAttempt?: boolean }) {
+    if (!this.isMasteryCampaign()) {
+      return
+    }
+
+    if (options.preserveAttemptState) {
+      return
+    }
+
+    const shouldResetAttempt = options.resetAttempt ?? true
+    if (!shouldResetAttempt) {
+      return
+    }
+
+    this.attemptStartedAt = this.time.now
+    this.attemptDeaths = 0
+  }
+
+  private createAttemptHud() {
+    this.attemptHudText = this.add
+      .text(12, 70, '', {
+        fontSize: '14px',
+        color: '#cddcc8',
+        fontFamily: 'Consolas, monospace'
+      })
+      .setScrollFactor(0)
+      .setDepth(43)
+  }
+
+  private updateAttemptHud() {
+    if (!this.attemptHudText) {
+      return
+    }
+
+    if (!this.isMasteryCampaign()) {
+      this.attemptHudText.setVisible(false)
+      return
+    }
+
+    const elapsed = Math.max(0, Math.floor(this.time.now - this.attemptStartedAt))
+    this.attemptHudText.setVisible(true)
+    this.attemptHudText.setText(
+      `Mode: Mastery Pack\nRoom: ${this.getCurrentRoom().id}\nTimer: ${formatDurationMs(elapsed)}\nDeaths: ${this.attemptDeaths}`
+    )
+  }
+
+  private createClearPanel() {
+    const panelBackground = this.add
+      .rectangle(72, 128, 656, 304, 0x0a110a, 0.92)
+      .setOrigin(0, 0)
+      .setStrokeStyle(2, 0xcfe2c6, 0.7)
+      .setScrollFactor(0)
+      .setDepth(55)
+
+    this.clearPanelText = this.add
+      .text(96, 152, '', {
+        fontSize: '18px',
+        color: '#e0eed9',
+        fontFamily: 'Trebuchet MS, sans-serif',
+        lineSpacing: 6
+      })
+      .setScrollFactor(0)
+      .setDepth(56)
+
+    this.clearPanel = this.add.container(0, 0, [panelBackground, this.clearPanelText])
+    this.clearPanel.setVisible(false)
+    this.clearPanel.setDepth(55)
+  }
+
+  private openClearPanel(result: ClearPanelResult) {
+    if (!this.clearPanelText || !this.clearPanel) {
+      return
+    }
+
+    this.levelClearPanelVisible = true
+    this.levelClearHasNext = this.levelIndex < this.rooms.length - 1
+    this.isComplete = true
+    this.physics.world.pause()
+    this.clearPanel.setVisible(true)
+
+    const actionHint = this.levelClearHasNext
+      ? 'N / Enter / Space: Next   R: Retry   B: Back'
+      : 'Enter / Space: Finish   R: Retry   B: Back'
+    this.clearPanelText.setText(
+      [
+        `${result.roomName} Cleared`,
+        `Time: ${formatDurationMs(result.clearMs)}`,
+        `Deaths: ${result.deaths}`,
+        `Medal: ${getMedalLabel(result.medal)}${result.isNewPb ? '   (New PB)' : ''}`,
+        '',
+        result.chapterComplete ? `Chapter ${this.getCurrentRoom().chapter} complete` : '',
+        result.packComplete ? 'Mastery Pack complete' : '',
+        '',
+        actionHint
+      ]
+        .filter((line) => line.length > 0)
+        .join('\n')
+    )
+  }
+
+  private closeClearPanel() {
+    this.levelClearPanelVisible = false
+    this.clearPanel?.setVisible(false)
+    this.isComplete = false
+    this.physics.world.resume()
+  }
+
+  private handleClearPanelInput() {
+    if (!this.clearActionKeys) {
+      return
+    }
+
+    const confirmNext =
+      Phaser.Input.Keyboard.JustDown(this.clearActionKeys.next) ||
+      Phaser.Input.Keyboard.JustDown(this.clearActionKeys.enter) ||
+      Phaser.Input.Keyboard.JustDown(this.clearActionKeys.space)
+    const retry = Phaser.Input.Keyboard.JustDown(this.clearActionKeys.retry)
+    const back = Phaser.Input.Keyboard.JustDown(this.clearActionKeys.back)
+
+    if (back) {
+      this.closeClearPanel()
+      this.scene.start('title')
+      return
+    }
+
+    if (retry) {
+      this.closeClearPanel()
+      this.loadLevel(this.levelIndex, { resetAttempt: true })
+      return
+    }
+
+    if (!confirmNext) {
+      return
+    }
+
+    this.closeClearPanel()
+    if (this.levelClearHasNext) {
+      this.loadLevel(this.levelIndex + 1, { resetAttempt: true })
+      return
+    }
+
+    this.scene.start('title')
+  }
+
   private createTileRect(x: number, y: number, baseWidth: number, baseHeight: number, style: TileRenderStyle) {
     const width = baseWidth * (style.widthScale ?? 1)
     const height = baseHeight * (style.heightScale ?? 1)
@@ -1043,7 +1352,9 @@ class MainScene extends Phaser.Scene {
 
     const decalLayer = this.add.container(centerX, centerY)
     decalLayer.setDepth(-10)
-    const decals = getDeterministicDecals(LEVELS[levelIndex], TILE_SIZE, levelIndex)
+    const room = this.rooms[levelIndex]
+    const seedIndex = this.campaignId === 'mastery_v13' ? levelIndex + 100 : levelIndex
+    const decals = getDeterministicDecals(room.grid, TILE_SIZE, seedIndex)
     decals.forEach((decal) => {
       const ellipse = this.add.ellipse(
         decal.x - centerX,
@@ -1085,12 +1396,21 @@ class MainScene extends Phaser.Scene {
     }
   }
 
-  private loadLevel(index: number) {
-    const levelData = parseLevel(LEVELS[index], TILE_SIZE)
+  private loadLevel(
+    index: number,
+    options: { preserveAttemptState?: boolean; resetAttempt?: boolean } = {}
+  ) {
+    const room = this.rooms[index]
+    if (!room) {
+      return
+    }
+
+    const levelData = parseLevel(room.grid, TILE_SIZE)
     const levelWidth = levelData.width
     const levelHeight = levelData.height
 
     this.levelIndex = index
+    this.levelClearPanelVisible = false
     this.isComplete = false
     this.isDripping = false
     this.isWallSliding = false
@@ -1104,6 +1424,8 @@ class MainScene extends Phaser.Scene {
     this.levelText?.destroy()
     this.stopIdleWobble()
     this.clearBackgroundDepth()
+    this.clearPanel?.setVisible(false)
+    this.updateAttemptStateForLevelLoad(options)
 
     // Stop and clear all particle emitters to prevent memory leak
     this.jumpEmitter?.stop()
@@ -1219,12 +1541,14 @@ class MainScene extends Phaser.Scene {
     this.overlay.setDepth(10)
 
     this.levelText = this.add
-      .text(8, 8, LEVELS[index].join('\n'), {
+      .text(8, 8, room.grid.join('\n'), {
         fontFamily: 'monospace',
         fontSize: '12px',
         color: '#cbd7c0'
       })
       .setAlpha(0.35)
+
+    this.updateAttemptHud()
   }
 
   private startIdleWobble() {
@@ -1289,7 +1613,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false
     }
   },
-  scene: [TitleScene, MainScene, WinScene]
+  scene: [TitleScene, MainScene, StatsScene, WinScene]
 }
 
 new Phaser.Game(config)

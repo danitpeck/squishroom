@@ -1,4 +1,4 @@
-# Squishroom - Design Doc (v1.1)
+# Squishroom - Design Doc (v1.3)
 
 ## Elevator Pitch
 Squishroom is a tiny, single-screen platformer about guiding a squishy slime girl through tight rooms using tactile, playful movement. The joy comes from how she moves - stretching, squashing, and slipping through cracks.
@@ -47,11 +47,14 @@ Out of scope unless explicitly re-scoped:
 - Background/depth visuals (parallax + deterministic decals) are implemented as non-colliding presentation layers.
 - Juice hooks are implemented for particles, SFX, and accessibility-aware screen shake.
 - Accessibility settings surface is implemented in title/in-game flows with persisted shake, contrast, and SFX volume.
+- Campaign selector is implemented with separate `Core Run`, `Mastery Pack`, and `Stats` routes.
+- `Mastery Pack` includes 12 single-screen rooms across 3 chapters using locked mechanics.
+- Per-room medal thresholds and local run-stat persistence are implemented.
 
 ## Delivery Status
-- `Done`: baseline validation (tests/build), render-skin foundation, core tile visual pass, background/depth implementation, gameplay semantics preserved by parser/rule modules.
-- `In Progress`: room-by-room readability/contrast checklist, measurable juice mix calibration (shake/SFX thresholds), and settings UX clarity pass.
-- `Next`: content expansion and playtest documentation once polish closure criteria are met.
+- `Done`: baseline validation (tests/build), render-skin foundation, core tile visual pass, background/depth implementation, settings persistence, campaign routing, mastery content integration, medal/stat systems.
+- `In Progress`: room-by-room readability/contrast checklist, measurable juice mix calibration (shake/SFX thresholds), and mastery medal tuning.
+- `Next`: playtest-based friction trims and post-v1.3 quality pass.
 
 ## Current Priority Theme
-Accessibility-first polish closure: finish options/persistence ergonomics and measurable readability/juice targets while preserving locked mechanics and ASCII level semantics.
+Content-first polish closure: tune mastery room flow and medal fairness while preserving locked mechanics and ASCII level semantics.

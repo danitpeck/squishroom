@@ -6,7 +6,7 @@ Do not replace the roadmap; extend it. The game is already fun and playable, so 
 ## Roadmap Status
 - Track A - Presentation + Accessibility (Primary): `In Progress`
 - Track B - Gameplay Feel (Secondary): `In Progress`
-- Track C - Content (After polish closure): `Next`
+- Track C - Content (Mastery Expansion): `In Progress`
 
 ## Track A - Presentation + Accessibility (Primary)
 ### Render Skin Layer (priority)
@@ -26,16 +26,18 @@ Do not replace the roadmap; extend it. The game is already fun and playable, so 
 - [Done] Regression checks for thin platform behavior, drip timing, wall interaction.
 - [Next] Minor room adjustments only where readability/mechanics demand.
 
-## Track C - Content (After polish closure)
-- [Next] Add 3-6 additional single-screen rooms using existing mechanics.
-- [Next] Create one compact skill-check sequence of 2-3 rooms for endgame flow.
-- [Next] Keep total game length intentionally short and replayable.
+## Track C - Content (Mastery Expansion)
+- [Done] Add campaign selection flow (`Core Run`, `Mastery Pack`, `Stats`) at title.
+- [Done] Ship `Mastery Pack` room set with 12 rooms (`M1-01` through `M3-04`).
+- [Done] Add per-room medal targets (Bronze/Silver/Gold) and local best-run persistence.
+- [In Progress] Tune room readability/friction and medal thresholds (`±10%` max adjustment budget).
+- [Next] Add playtest-derived room revisions and lock final targets.
 
 ## Immediate Next Milestones
-1. Finish room-by-room readability and contrast checklist (normal + high-contrast).
-2. Ship options/settings closure with persisted shake, contrast, and SFX volume behavior validated.
+1. Finish full readability + contrast pass for all 12 mastery rooms.
+2. Tune medal thresholds and clear outliers before target lock.
 3. Finalize measurable juice targets (shake intensity bands, SFX loudness/cadence thresholds).
-4. Start content expansion rooms and playtest logging.
+4. Run structured playtest loop and capture room-by-room revisions.
 
 ## Not planned (unless roadmap changes)
 - Combat systems
@@ -44,4 +46,5 @@ Do not replace the roadmap; extend it. The game is already fun and playable, so 
 
 ## Release framing
 - v1.1: Render Skin Layer + accessibility/juice polish closure (`In Progress`).
-- v1.2: Content extension with no major new mechanics (`Next`).
+- v1.2: Content extension with no major new mechanics (`Done`).
+- v1.3: Mastery campaign + stats/medals system (`In Progress`).
