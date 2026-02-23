@@ -46,7 +46,7 @@ Example:
 - Production build check: `npm run build`
 
 Current validation snapshot (February 23, 2026):
-- `npm run test`: 20 files passed, 224 tests passed.
+- `npm run test`: 23 files passed, 239 tests passed.
 - `npm run build`: TypeScript + Vite build succeeded.
 
 ## Agent Improvement Loop
