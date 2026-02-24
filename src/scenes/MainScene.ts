@@ -87,7 +87,9 @@ export class MainScene extends Phaser.Scene {
   private wallCollider?: Phaser.Physics.Arcade.Collider
   private thinCollider?: Phaser.Physics.Arcade.Collider
   private hazardOverlap?: Phaser.Physics.Arcade.Collider
-  private exitZone?: Phaser.GameObjects.Rectangle
+  private exitZone?: Phaser.GameObjects.GameObject
+  private exitGlow?: Phaser.GameObjects.Ellipse
+  private exitTween?: Phaser.Tweens.Tween
   private levelText?: Phaser.GameObjects.Text
   private overlay?: Phaser.GameObjects.Rectangle
   private isComplete = false
@@ -135,7 +137,7 @@ export class MainScene extends Phaser.Scene {
   private screenShakeEnabled = true
   private renderSkinMode = resolveRenderSkinMode(window.location.search)
   private renderPaletteMode: RenderPaletteMode = 'normal'
-  private decorativeLayerTiles: Phaser.GameObjects.Rectangle[] = []
+  private decorativeLayerTiles: Phaser.GameObjects.GameObject[] = []
   private backgroundFarLayer?: Phaser.GameObjects.Container
   private backgroundMidLayer?: Phaser.GameObjects.Container
   private backgroundDecalLayer?: Phaser.GameObjects.Container
@@ -158,9 +160,17 @@ export class MainScene extends Phaser.Scene {
       frameWidth: 32,
       frameHeight: 32
     })
+    this.load.image('tile-block', './assets/tiles/block.png')
+    this.load.image('tile-ledge', './assets/tiles/ledge.png')
+    this.load.image('tile-spikes', './assets/tiles/spikes.png')
+    this.load.image('tile-flag', './assets/tiles/flag.png')
   }
 
   create() {
+    // Set nearest-neighbor filtering for crisp pixel art tiles
+    ;['tile-block', 'tile-ledge', 'tile-spikes', 'tile-flag'].forEach((key) => {
+      this.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST)
+    })
     const keyboard = this.input.keyboard
     this.cursors = keyboard?.createCursorKeys()
     this.keys = keyboard?.addKeys({
@@ -921,6 +931,19 @@ export class MainScene extends Phaser.Scene {
     return tile
   }
 
+  private createTileImage(x: number, y: number, displayWidth: number, displayHeight: number, textureKey: string) {
+    const img = this.add.image(x, y, textureKey)
+    img.setDisplaySize(displayWidth, displayHeight)
+    return img
+  }
+
+  private createWallTileSprite(x: number, y: number, width: number, height: number) {
+    const wall = this.add.tileSprite(x, y, width, height, 'tile-block')
+    wall.setTileScale(TILE_SIZE / 18)
+    wall.setTint(0x3d5a3a)
+    return wall
+  }
+
   private createDecorativeEdge(x: number, y: number, width: number, height: number, style: TileRenderStyle) {
     if (!style.edgeColor || !style.edgeHeightScale) {
       return
@@ -1031,6 +1054,10 @@ export class MainScene extends Phaser.Scene {
     this.lastAirborneFallSpeed = 0
 
     this.exitZone?.destroy()
+    this.exitGlow?.destroy()
+    this.exitTween?.destroy()
+    this.exitGlow = undefined
+    this.exitTween = undefined
     this.overlay?.destroy()
     this.levelText?.destroy()
     this.stopIdleWobble()
@@ -1064,35 +1091,99 @@ export class MainScene extends Phaser.Scene {
 
     this.spawnPoint = { x: levelData.spawn.x, y: levelData.spawn.y }
 
+    const useImages = this.renderSkinMode === 'skinned'
+
     const wallStyle = getTileRenderStyle('#', this.renderSkinMode, this.renderPaletteMode)
     const thinStyle = getTileRenderStyle('~', this.renderSkinMode, this.renderPaletteMode)
     const hazardStyle = getTileRenderStyle('^', this.renderSkinMode, this.renderPaletteMode)
     const exitStyle = getTileRenderStyle('E', this.renderSkinMode, this.renderPaletteMode)
 
     levelData.wallSegments.forEach(({ x, y, width, height }) => {
-      const wall = this.createTileRect(x, y, width, height, wallStyle)
-      this.createDecorativeEdge(x, y, width, height, wallStyle)
+      let wall: Phaser.GameObjects.GameObject
+      if (useImages) {
+        wall = this.createWallTileSprite(x, y, width, height)
+      } else {
+        wall = this.createTileRect(x, y, width, height, wallStyle)
+        this.createDecorativeEdge(x, y, width, height, wallStyle)
+      }
       this.physics.add.existing(wall, true)
+      const body = (wall as unknown as { body: Phaser.Physics.Arcade.StaticBody }).body
+      body.setSize(width, height)
       this.walls!.add(wall)
     })
 
     levelData.thinPlatforms.forEach(({ x, y }) => {
-      const thin = this.createTileRect(x, y, TILE_SIZE, TILE_SIZE, thinStyle)
-      this.createDecorativeEdge(thin.x, thin.y, thin.width, thin.height, thinStyle)
+      let thin: Phaser.GameObjects.GameObject
+      const thinWidth = TILE_SIZE
+      const thinHeight = TILE_SIZE * 0.35
+      const thinDisplayHeight = TILE_SIZE * 0.65
+      if (useImages) {
+        const img = this.createTileImage(x, y, thinWidth, thinDisplayHeight, 'tile-ledge')
+        ;(img as Phaser.GameObjects.Image).setTint(0x8a9a88)
+        thin = img
+      } else {
+        thin = this.createTileRect(x, y, TILE_SIZE, TILE_SIZE, thinStyle)
+        const rect = thin as Phaser.GameObjects.Rectangle
+        this.createDecorativeEdge(rect.x, rect.y, rect.width, rect.height, thinStyle)
+      }
       this.physics.add.existing(thin, true)
+      const body = (thin as unknown as { body: Phaser.Physics.Arcade.StaticBody }).body
+      body.setSize(thinWidth, thinHeight)
       this.thinPlatforms!.add(thin)
     })
 
     levelData.hazards.forEach(({ x, y }) => {
-      const hazard = this.createTileRect(x, y, TILE_SIZE, TILE_SIZE, hazardStyle)
-      this.createDecorativeEdge(hazard.x, hazard.y, hazard.width, hazard.height, hazardStyle)
+      let hazard: Phaser.GameObjects.GameObject
+      const hazardWidth = TILE_SIZE * 0.7
+      const hazardHeight = TILE_SIZE * 0.4
+      // Push spikes to bottom of tile cell so they sit on the ground
+      const hazardYOffset = (TILE_SIZE - hazardHeight) / 2
+      if (useImages) {
+        hazard = this.createTileImage(x, y + hazardYOffset, hazardWidth, hazardHeight, 'tile-spikes')
+      } else {
+        hazard = this.createTileRect(x, y, TILE_SIZE, TILE_SIZE, hazardStyle)
+        const rect = hazard as Phaser.GameObjects.Rectangle
+        this.createDecorativeEdge(rect.x, rect.y, rect.width, rect.height, hazardStyle)
+      }
       this.physics.add.existing(hazard, true)
+      const body = (hazard as unknown as { body: Phaser.Physics.Arcade.StaticBody }).body
+      body.setSize(hazardWidth, hazardHeight)
+      body.setOffset((TILE_SIZE * 0.3) / 2, hazardYOffset)
       this.hazards!.add(hazard)
     })
 
     if (levelData.exit) {
-      this.exitZone = this.createTileRect(levelData.exit.x, levelData.exit.y, TILE_SIZE, TILE_SIZE, exitStyle)
+      const exitWidth = TILE_SIZE * 0.8
+      const exitHeight = TILE_SIZE * 0.6
+
+      // Outer soft glow
+      const outerGlow = this.add.ellipse(levelData.exit.x, levelData.exit.y, exitWidth * 3, exitHeight * 3, 0xd7c775, 0.15)
+      outerGlow.setDepth(0)
+      // Inner bright glow
+      const glow = this.add.ellipse(levelData.exit.x, levelData.exit.y, exitWidth * 1.6, exitHeight * 1.6, 0xfff0c7, 0.35)
+      glow.setDepth(0)
+      this.exitGlow = glow
+      this.decorativeLayerTiles.push(outerGlow)
+      this.exitTween = this.tweens.add({
+        targets: [glow, outerGlow],
+        alpha: { from: 0.2, to: 0.55 },
+        scaleX: { from: 0.9, to: 1.15 },
+        scaleY: { from: 0.9, to: 1.15 },
+        duration: 1000,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+      })
+
+      if (useImages) {
+        this.exitZone = this.createTileImage(levelData.exit.x, levelData.exit.y, exitWidth, exitHeight, 'tile-flag')
+      } else {
+        this.exitZone = this.createTileRect(levelData.exit.x, levelData.exit.y, TILE_SIZE, TILE_SIZE, exitStyle)
+      }
+      ;(this.exitZone as unknown as Phaser.GameObjects.Components.Depth).setDepth(1)
       this.physics.add.existing(this.exitZone, true)
+      const body = (this.exitZone as unknown as { body: Phaser.Physics.Arcade.StaticBody }).body
+      body.setSize(exitWidth, exitHeight)
     }
 
     if (!this.player) {
